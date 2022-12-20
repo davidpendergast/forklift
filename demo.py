@@ -49,13 +49,17 @@ class Entity:
 
         self._world = None  # set by Level
 
-    def get_color(self, z_offset):
+    def get_color(self, z_offset, darker=0.0):
         if z_offset <= 0:
-            return self.color
+            res = pygame.Color(self.color)
         else:
-            # TODO hmmm
             a = max(0., min(1.0, math.atan(8 * z_offset / CELL_HEIGHT) / (math.pi / 2)))
-            return pygame.Color(self.color).lerp((255, 255, 255), a)
+            res = pygame.Color(self.color).lerp((255, 255, 255), a)
+
+        if darker > 0:
+            return res.lerp("black", darker)
+        else:
+            return res
 
     def get_rect(self, scale=1) -> pygame.Rect:
         return pygame.Rect(self.rect.x * scale, self.rect.y * scale,
@@ -85,12 +89,29 @@ class Entity:
     def get_line_width(self):
         return 4
 
+    def should_draw_x(self):
+        return False
+
+    def draw_x_at(self, rect, surf):
+        inset = self.get_inset()
+        color = self.get_color(self.z, darker=0.15)
+
+        pygame.draw.line(surf, color,
+                         (rect[0] + inset * 2, rect[1] + inset * 2),
+                         (rect[0] + rect[2] - inset * 2, rect[1] + rect[3] - inset * 2), width=3)
+        pygame.draw.line(surf, color,
+                         (rect[0] + rect[2] - inset * 2, rect[1] + inset * 2),
+                         (rect[0] + inset * 2, rect[1] + rect[3] - inset * 2), width=3)
+
     def draw_at(self, rect, surf):
         my_rect = rect.inflate(-self.get_inset() * 2, -self.get_inset() * 2)
         pygame.draw.rect(surf, self.get_color(self.get_z()), my_rect, width=self.get_line_width())
 
+        if self.should_draw_x():
+            self.draw_x_at(rect, surf)
+
         z_text_pos = my_rect[0] + self.get_inset(), my_rect[1] + self.get_inset()
-        z_text = str(self.get_z())
+        z_text = str(self.get_z() + self.get_height())
         draw_text(surf, z_text_pos, z_text, color=self.get_color(self.get_z()))
 
     def __eq__(self, other):
@@ -204,19 +225,14 @@ class Forklift(Entity):
             return True
         return False
 
+    def should_draw_x(self):
+        return True
+
     def draw_at(self, rect, surf):
-        inset = self.get_inset()
-        color = pygame.Color(self.get_color(self.z))
-        color2 = color.lerp("black", 0.15)
-
-        pygame.draw.line(surf, color2,
-                         (rect[0] + inset*2, rect[1] + inset*2),
-                         (rect[0] + rect[2] - inset*2, rect[1] + rect[3] - inset*2), width=3)
-        pygame.draw.line(surf, color2,
-                         (rect[0] + rect[2] - inset*2, rect[1] + inset*2),
-                         (rect[0] + inset*2, rect[1] + rect[3] - inset*2), width=3)
-
         super().draw_at(rect, surf)
+        inset = self.get_inset()
+        color2 = self.get_color(self.z, darker=0.15)
+
         fork_z = self.get_lift_z()
         fork_color = self.get_world().lerp_color_for_z(color2, fork_z)
 
@@ -242,13 +258,21 @@ class Forklift(Entity):
 
 
 class Plank(Entity):
-
+    # TODO boxes & planks should share a common superclass
     def __init__(self, rect, z, height=1):
         super().__init__(rect, z, height, rect.width * rect.height * height, "tan", liftable=True)
 
 
 class Box(Entity):
-    pass
+    # TODO boxes & planks should share a common superclass
+    def __init__(self, rect, z, height=CELL_HEIGHT):
+        super().__init__(rect, z, height, rect.width * rect.height, "goldenrod3", liftable=True)
+
+    def should_draw_x(self):
+        return True
+
+    def draw_at(self, rect, surf):
+        super().draw_at(rect, surf)
 
 
 class Level:
@@ -356,7 +380,7 @@ class Level:
             ent.draw_at(ent_screen_rect, surf)
 
 
-def build_sample_level(w, h, n_planks=15) -> Level:
+def build_sample_level(w, h, n_planks=15, n_boxes=3) -> Level:
     res = Level()
     f_xy = w // 2, h // 2
     for x in range(w):
@@ -368,6 +392,14 @@ def build_sample_level(w, h, n_planks=15) -> Level:
                 res.set_terrain((x, y), 8)
             else:
                 res.set_terrain((x, y), -1)
+
+    for _ in range(n_boxes):
+        x = random.randint(0, w - 1)
+        y = random.randint(0, h - 1)
+        z = res.get_z((x, y))
+
+        if z >= 0:
+            res.add(Box(pygame.Rect(x, y, 1, 1), z))
 
     for _ in range(n_planks):
         x = random.randint(0, w - 1)
