@@ -4,14 +4,14 @@ import os
 import pathlib
 
 import configs
-import src.example.demogame
+import src.game.forklift
 
 
 """
 The main entry point.
 """
 
-game_class = src.example.demogame.DemoGame  # <--- change this to your actual game class
+game_class = src.game.forklift.ForkliftGame  # <--- change this to your actual game class
 
 
 def _dismiss_splash_screen():

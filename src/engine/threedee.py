@@ -1,6 +1,8 @@
 from OpenGL.GL import *
 
 import numpy
+import pygame
+import math
 
 import src.engine.layers as layers
 import src.engine.sprites as sprites
@@ -42,6 +44,58 @@ class Camera3D:
 
     def update(self):
         pass
+
+
+class KeyboardControlledCamera3D(Camera3D):
+
+    def __init__(self, position=(0, 0, 0), direction=(0, 0, -1), fov=45, move_speed=(45, 30), rot_speed=(120, 45)):
+        super().__init__(position=position, direction=direction, fov=fov)
+        self.hrot_speed = rot_speed[0]
+        self.vrot_speed = rot_speed[1]
+        self.move_speed = move_speed[0]
+        self.fly_speed = move_speed[1]
+
+    def update(self, dt=12, keys_held=None):
+        if keys_held is None:
+            keys_held = pygame.key.get_pressed()
+
+        dt_secs = dt / 1000
+        position = pygame.Vector3(self.get_position())
+        direction = pygame.Vector3(self.get_direction())
+
+        if keys_held[pygame.K_LEFT] ^ keys_held[pygame.K_RIGHT]:
+            xz = pygame.Vector2(direction.x, direction.z)
+            xz = xz.rotate(self.hrot_speed * dt_secs * (-1 if keys_held[pygame.K_LEFT] else 1))
+            direction.x = xz[0]
+            direction.z = xz[1]
+            direction.scale_to_length(1)
+
+        if keys_held[pygame.K_UP] ^ keys_held[pygame.K_DOWN]:
+            # this is a bit sketchy, but the intent is that when the camera is parallel to the floor,
+            # it rotates up and down at vrot_speed but gets slower as you rotate away.
+            direction.y += math.sin(self.vrot_speed * math.pi / 180 * dt_secs) * (1 if keys_held[pygame.K_UP] else -1)
+            direction.scale_to_length(1)
+
+        ms = self.move_speed * dt_secs
+        xz = pygame.Vector2(position.x, position.z)
+        view_xz = pygame.Vector2(direction.x, direction.z)
+        view_xz.scale_to_length(1)
+
+        if keys_held[pygame.K_a]:
+            xz = xz + ms * view_xz.rotate(-90)
+        if keys_held[pygame.K_d]:
+            xz = xz + ms * view_xz.rotate(90)
+        if keys_held[pygame.K_w]:
+            xz = xz + ms * view_xz
+        if keys_held[pygame.K_s]:
+            xz = xz + ms * view_xz.rotate(180)
+
+        y = position.y
+        if keys_held[pygame.K_SPACE] ^ keys_held[pygame.K_LSHIFT]:
+            y += self.fly_speed * dt_secs * (1 if keys_held[pygame.K_SPACE] else -1)
+
+        self.set_direction((view_xz[0], direction.y, view_xz[1]))
+        self.set_position((xz[0], y, xz[1]))
 
 
 class ThreeDeeLayer(layers.ImageLayer):
