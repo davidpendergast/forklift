@@ -119,6 +119,7 @@ def get_matrix_looking_at(eye_xyz, target_xyz, up_vec):
     f = util.set_length(F, 1)
     up_norm = util.set_length(up_vec, 1)
     s = util.cross_prod(f, up_norm)
+    print(f"{s=}, {util.mag(s)=}")
     u = util.cross_prod(util.set_length(s, 1), f)
     res = numpy.array([[s[0], s[1], s[2], 0],
                        [u[0], u[1], u[2], 0],

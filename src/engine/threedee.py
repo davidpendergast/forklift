@@ -27,6 +27,9 @@ class Camera3D:
     def get_direction(self):
         return self._direction
 
+    def get_up_vector(self):
+        return (0, 1, 0)
+
     def get_snapshot(self) -> 'Camera3D':
         """returns a copy of this camera"""
         return Camera3D(position=self.get_position(),
@@ -103,6 +106,7 @@ class ThreeDeeLayer(layers.ImageLayer):
     def __init__(self, layer_id, layer_z):
         super().__init__(layer_id, layer_z)
         self.camera = Camera3D()
+        self.use_perspective = True
 
         self.vertices = numpy.array([], dtype=float)
         self.tex_coords = numpy.array([], dtype=float)
@@ -110,6 +114,10 @@ class ThreeDeeLayer(layers.ImageLayer):
 
     def set_camera(self, cam):
         self.camera = cam.get_snapshot()
+
+    def set_use_perspective(self, val):
+        """Set whether to use a perspective or orthographic camera."""
+        self.use_perspective = val
 
     def accepts_sprite_type(self, sprite_type):
         return sprite_type == sprites.SpriteTypes.THREE_DEE
@@ -176,10 +184,15 @@ class ThreeDeeLayer(layers.ImageLayer):
 
     def get_proj_matrix(self, engine):
         w, h = engine.get_game_size()
-        return matutils.perspective_matrix(self.camera.get_fov() / 360 * 6.283, w / h, 0.5, 1000000)
+        znear, zfar = 0.5, 100000
+        if self.use_perspective:
+            return matutils.perspective_matrix(self.camera.get_fov() / 360 * 6.283, w / h, znear, zfar)
+        else:
+            zoom = 5
+            return matutils.ortho_matrix(-zoom, zoom, -zoom * h / w, zoom * h / w, znear, zfar)
 
     def get_camera_up(self):
-        return (0, 1, 0)
+        return self.camera.get_up_vector()
 
     def _set_uniforms_for_scene(self, engine):
         view = self.get_view_matrix()

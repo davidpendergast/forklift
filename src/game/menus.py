@@ -18,7 +18,9 @@ class Test3DMenu(scenes.Scene):
 
         self.sprites = [threedee.Sprite3D(m, spriteref.LAYER_3D) for m in util.listify(models)]
         self.camera = threedee.KeyboardControlledCamera3D((-20, 2, 0), (1, 0, 0))
+
         self.lock_cam_to_model = False
+        self.perspective_cam = True
 
     def all_sprites(self):
         return self.sprites
@@ -26,6 +28,9 @@ class Test3DMenu(scenes.Scene):
     def update(self):
         if inputs.get_instance().was_pressed(pygame.K_l):
             self.lock_cam_to_model = not self.lock_cam_to_model
+        if inputs.get_instance().was_pressed(pygame.K_o):
+            self.perspective_cam = not self.perspective_cam
+            renderengine.get_instance().get_layer(spriteref.LAYER_3D).set_use_perspective(self.perspective_cam)
 
         self.camera.update(globaltimer.dt())
 
