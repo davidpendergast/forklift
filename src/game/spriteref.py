@@ -8,6 +8,7 @@ import src.engine.spritesheets as spritesheets
 
 
 LAYER_3D = "threedee"
+LAYER_DEBUG = "debug"
 
 _3D_TEXTURES = {}  # sheet_id -> TextureSheet
 

@@ -390,7 +390,7 @@ def cross_prod(v1, v2):
     b3 = v2[2] if len(v2) >= 3 else 0
 
     return (det2x2(a2, a3, b2, b3),
-            det2x2(a1, a3, b1, b3),
+            -det2x2(a1, a3, b1, b3),
             det2x2(a1, a2, b1, b2))
 
 
