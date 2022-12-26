@@ -1,3 +1,5 @@
+import typing
+
 import pygame
 
 import traceback
@@ -193,7 +195,12 @@ class Binding:
     def __len__(self):
         return len(self.keycode)
 
-    def _mods_satisfied(self, input_state):
+    def _all_mod_keys(self):
+        for m in self.mods:
+            if m is not pygame.KMOD_NONE:
+                yield modifier_to_keys(m)
+
+    def _check_mods_held(self, func):
         require_exact = False
         allowed_keys = set()
         for m in self.mods:
@@ -202,17 +209,20 @@ class Binding:
                 require_exact = True
             else:
                 keys_that_satisfy_mod = modifier_to_keys(m)
-                if not input_state.is_held(keys_that_satisfy_mod):
+                if not func(keys_that_satisfy_mod):
                     return False
                 else:
                     allowed_keys.update(keys_that_satisfy_mod)
 
         if require_exact:
             prohibited_keys = [k for k in _ALL_MOD_KEYS if k not in allowed_keys]
-            if input_state.is_held(prohibited_keys):
+            if func(prohibited_keys):
                 return False
 
         return True
+
+    def _mods_satisfied(self, input_state):
+        return self._check_mods_held(lambda mod_keys: input_state.is_held(mod_keys))
 
     def is_held(self, input_state):
         if not input_state.is_held(self.keycode):
@@ -223,6 +233,30 @@ class Binding:
         if not input_state.was_pressed(self.keycode):
             return False
         return self._mods_satisfied(input_state)
+
+    def was_released(self, input_state):
+        if self.is_held(input_state):
+            return False
+        else:
+            keys_released = []
+            for key in self.keycode:
+                if input_state.is_held(key):
+                    pass
+                elif input_state.was_released(key):
+                    keys_released.append(key)
+                else:
+                    return False  # binding wasn't pressed to begin with.
+
+            mods_released = []
+            for modkeys in self._all_mod_keys():
+                if input_state.is_held(modkeys):
+                    pass
+                elif input_state.was_released(modkeys):
+                    mods_released.append(modkeys)
+                else:
+                    return False  # mod wasn't pressed to begin with
+
+            return len(keys_released) + len(mods_released) > 0
 
     def time_held(self, input_state):
         min_time = input_state.time_held(self.keycode)

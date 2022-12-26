@@ -65,7 +65,7 @@ class Test3DMenu(scenes.Scene):
             self.perspective_cam = not self.perspective_cam
             renderengine.get_instance().get_layer(spriteref.LAYER_3D).set_use_perspective(self.perspective_cam)
 
-        self.camera.update(globaltimer.dt())
+        self.camera.update()
 
         if self.lock_cam_to_model and len(self.sprites) > 0:
             model_pos = self.sprites[0].position()

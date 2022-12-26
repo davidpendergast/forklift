@@ -9,6 +9,8 @@ import src.engine.sprites as sprites
 import src.engine.inputs as inputs
 import src.utils.util as util
 import src.utils.matutils as matutils
+import src.engine.globaltimer as globaltimer
+import src.engine.renderengine as renderengine
 import configs
 
 
@@ -60,30 +62,57 @@ class KeyboardControlledCamera3D(Camera3D):
         self.fly_speed = move_speed[1]
         self.v_angle_limit = (10, 170)
 
-    def update(self, dt=12, keys_held=None):
-        if keys_held is None:
-            keys_held = pygame.key.get_pressed()
+        self._mouse_down_xy = None
+        self._mouse_down_direction = None
 
-        dt_secs = dt / 1000
+    def update(self):
+        dt_secs = globaltimer.dt() / 1000
         position = pygame.Vector3(self.get_position())
         direction = pygame.Vector3(self.get_direction())
 
-        if keys_held[pygame.K_LEFT] ^ keys_held[pygame.K_RIGHT]:
-            xz = pygame.Vector2(direction.x, direction.z)
-            xz = xz.rotate(self.hrot_speed * dt_secs * (-1 if keys_held[pygame.K_LEFT] else 1))
-            direction.x = xz[0]
-            direction.z = xz[1]
+        if inputs.get_instance().mouse_was_pressed(button=1):
+            self._mouse_down_xy = inputs.get_instance().mouse_pos()
+            self._mouse_down_direction = direction
 
-        if keys_held[pygame.K_UP] ^ keys_held[pygame.K_DOWN]:
-            dir_spherical = pygame.Vector3(direction.x, direction.z, direction.y).as_spherical()
-            new_angle = dir_spherical[1] - self.vrot_speed * dt_secs * (1 if keys_held[pygame.K_UP] else -1)
-            new_angle = util.bound(new_angle, *self.v_angle_limit)
+        if inputs.get_instance().mouse_is_dragging(button=1):
+            screen_xy = renderengine.get_instance().get_game_size()
+            start_xy, end_xy = inputs.get_instance().mouse_drag_total()
+            dx = end_xy[0] - start_xy[0]
+            dy = end_xy[1] - start_xy[1]
+
+            dy_angle = dy / screen_xy[1] * self.get_fov()
+            dx_angle = dx / screen_xy[0] * (self.get_fov() * screen_xy[0] / screen_xy[1])
+
+            start_dir = self._mouse_down_direction
+            dir_spherical = pygame.Vector3(start_dir.x, start_dir.z, start_dir.y).as_spherical()
+            new_y_angle = dir_spherical[1] - dy_angle
+            new_y_angle = util.bound(new_y_angle, *self.v_angle_limit)
+            new_xz_angle = dir_spherical[2] - dx_angle
 
             temp = pygame.Vector3()
-            temp.from_spherical((dir_spherical[0], new_angle, dir_spherical[2]))
+            temp.from_spherical((dir_spherical[0], new_y_angle, new_xz_angle))
             direction.x = temp[0]
             direction.y = temp[2]
             direction.z = temp[1]
+        else:
+            view_dx = inputs.get_instance().is_held_two_way(pygame.K_LEFT, pygame.K_RIGHT)
+            if view_dx != 0:
+                xz = pygame.Vector2(direction.x, direction.z)
+                xz = xz.rotate(self.hrot_speed * dt_secs * view_dx)
+                direction.x = xz[0]
+                direction.z = xz[1]
+
+            view_dy = inputs.get_instance().is_held_two_way(pygame.K_DOWN, pygame.K_UP)
+            if view_dy != 0:
+                dir_spherical = pygame.Vector3(direction.x, direction.z, direction.y).as_spherical()
+                new_angle = dir_spherical[1] - self.vrot_speed * dt_secs * view_dy
+                new_angle = util.bound(new_angle, *self.v_angle_limit)
+
+                temp = pygame.Vector3()
+                temp.from_spherical((dir_spherical[0], new_angle, dir_spherical[2]))
+                direction.x = temp[0]
+                direction.y = temp[2]
+                direction.z = temp[1]
 
         ms = self.move_speed * dt_secs
 
@@ -91,18 +120,17 @@ class KeyboardControlledCamera3D(Camera3D):
         view_xz.scale_to_length(1)
 
         xz = pygame.Vector2(position.x, position.z)
-        if keys_held[pygame.K_a]:
-            xz = xz + ms * view_xz.rotate(-90)
-        if keys_held[pygame.K_d]:
-            xz = xz + ms * view_xz.rotate(90)
-        if keys_held[pygame.K_w]:
-            xz = xz + ms * view_xz
-        if keys_held[pygame.K_s]:
-            xz = xz + ms * view_xz.rotate(180)
+        move_dxz = inputs.get_instance().is_held_four_way(left=pygame.K_a, right=pygame.K_d,
+                                                          posy=pygame.K_w, negy=pygame.K_s)
+        if move_dxz[0] != 0:
+            xz = xz + ms * view_xz.rotate(90 * move_dxz[0])
+        if move_dxz[1] != 0:
+            xz = xz + ms * view_xz.rotate(180 * (move_dxz[1] - 1) / 2)
 
         y = position.y
-        if keys_held[pygame.K_SPACE] ^ keys_held[pygame.K_c]:
-            y += self.fly_speed * dt_secs * (1 if keys_held[pygame.K_SPACE] else -1)
+        move_dz = inputs.get_instance().is_held_two_way(pygame.K_c, pygame.K_SPACE)
+        if move_dz != 0:
+            y += self.fly_speed * dt_secs * move_dz
 
         self.set_direction(direction)
         self.set_position((xz[0], y, xz[1]))

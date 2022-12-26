@@ -1,4 +1,5 @@
 import pygame
+import random
 
 import src.engine.globaltimer as globaltimer
 import src.engine.keybinds as keybinds
@@ -25,8 +26,9 @@ class InputState:
 
     def __init__(self):
         self._current_time = 0
-        self._pressed_this_frame = {}  # keycode -> num times
-        self._held_keys = {}           # keycode -> time pressed
+        self._pressed_this_frame = {}   # keycode -> num times
+        self._released_this_frame = {}  # keycode -> num times
+        self._held_keys = {}            # keycode -> time pressed
 
         self._ascii_pressed_this_frame = []  # list of ascii chars typed this frame
 
@@ -40,16 +42,20 @@ class InputState:
     def set_key(self, key, held, ascii_val=''):
         if held:
             if key not in self._pressed_this_frame:
-                self._pressed_this_frame[key] = 1
-                if ascii_val is not None and len(ascii_val) > 0:
-                    self._ascii_pressed_this_frame.append(ascii_val)
-            else:
-                self._pressed_this_frame[key] += 1
+                self._pressed_this_frame[key] = 0
+            self._pressed_this_frame[key] += 1
+
+            if ascii_val is not None and len(ascii_val) > 0:
+                self._ascii_pressed_this_frame.append(ascii_val)
 
         if held and key not in self._held_keys:
             self._held_keys[key] = self._current_time
         elif not held and key in self._held_keys:
             del self._held_keys[key]
+
+            if key not in self._released_this_frame:
+                self._released_this_frame[key] = 0
+            self._released_this_frame[key] += 1
 
     def to_key_code(self, mouse_button):
         return "MOUSE_BUTTON_" + str(mouse_button)
@@ -81,7 +87,7 @@ class InputState:
             return any(map(lambda k: self.is_held(k), key))
         elif isinstance(key, keybinds.Binding):
             return key.is_held(self)
-        elif isinstance(key, int):
+        elif isinstance(key, int) or (isinstance(key, str) and key.startswith("MOUSE_BUTTON")):
             return key in self._held_keys
         elif isinstance(key, str):
             binding = keybinds.get_instance().get_binding_or_none(key)
@@ -124,6 +130,23 @@ class InputState:
         else:
             raise ValueError("Unrecognized key type: {}".format(key))
 
+    def was_released(self, key):
+        if isinstance(key, list) or isinstance(key, tuple):
+            for k in key:
+                if self.was_released(k):
+                    return True
+            return False
+        elif isinstance(key, keybinds.Binding):
+            return key.was_released(self)
+        elif isinstance(key, int) or (isinstance(key, str) and key.startswith("MOUSE_BUTTON")):
+            # it's a single key, hopefully
+            return key in self._released_this_frame and self._released_this_frame[key] > 0
+        elif isinstance(key, str):
+            binding = keybinds.get_instance().get_binding_or_none(key)
+            return binding is not None and binding.was_released(self)
+        else:
+            raise ValueError("Unrecognized key type: {}".format(key))
+
     def was_pressed_or_held_and_repeated(self, key, delay=configs.key_repeat_delay, freq=configs.key_repeat_period):
         if self.was_pressed(key):
             return True
@@ -133,22 +156,17 @@ class InputState:
         else:
             return False
 
-    def is_held_four_way(self, left=None, right=None, posy=None, negy=None):
+    def is_held_two_way(self, negative, positive):
         x = 0
-        if left is not None and self.is_held(left):
+        if negative is not None and self.is_held(negative):
             x -= 1
-        if right is not None and self.is_held(right):
+        if positive is not None and self.is_held(positive):
             x += 1
-        y = 0
-        if posy is not None and self.is_held(posy):
-            y += 1
-        if negy is not None and self.is_held(negy):
-            y -= 1
-        return (x, y)
+        return x
 
-    def was_pressed_four_way(self, left=None, right=None, posy=None, negy=None):
-        x = self.was_pressed_two_way(left, right)
-        y = self.was_pressed_two_way(posy, negy)
+    def is_held_four_way(self, left=None, right=None, posy=None, negy=None):
+        x = self.is_held_two_way(left, right)
+        y = self.is_held_two_way(negy, posy)
         return (x, y)
 
     def was_pressed_two_way(self, negative, positive):
@@ -158,6 +176,11 @@ class InputState:
         if positive is not None and self.was_pressed(positive):
             x += 1
         return x
+
+    def was_pressed_four_way(self, left=None, right=None, posy=None, negy=None):
+        x = self.was_pressed_two_way(left, right)
+        y = self.was_pressed_two_way(posy, negy)
+        return (x, y)
 
     def shift_is_held(self):
         return self.is_held(pygame.K_LSHIFT) or self.is_held(pygame.K_RSHIFT)
@@ -182,6 +205,13 @@ class InputState:
         """
         keycode = self.to_key_code(button)
         return self.was_pressed(keycode) and self.mouse_in_window()
+
+    def mouse_was_released(self, button=1):
+        """
+        button: 1 = left, 2 = middle, 3 = right, 4, 5 = something fancy
+        """
+        keycode = self.to_key_code(button)
+        return self.was_released(keycode) and self.mouse_in_window()
 
     def mouse_drag_total(self, button=1):
         """returns: (start_xy, current_xy) or None if not dragging."""
@@ -237,6 +267,7 @@ class InputState:
         """
         self._mouse_pos_last_frame = self._mouse_pos
         self._pressed_this_frame.clear()
+        self._released_this_frame.clear()
         self._ascii_pressed_this_frame.clear()
         
     def update(self):
