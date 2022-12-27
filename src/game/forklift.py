@@ -22,7 +22,7 @@ class ForkliftGame(game.Game):
 
     def initialize(self):
         globaltimer.set_show_fps(True)
-        scenes.create_instance(menus.Test3DMenu(spriteref.ThreeDeeModels.FORKLIFT))
+        scenes.create_instance(menus.Test3DMenu())
 
     def update(self) -> bool:
         scenes.get_instance().update()

@@ -52,9 +52,14 @@ class Camera3D:
         pass
 
 
+_ADJUST = 1/5
+
+
 class KeyboardControlledCamera3D(Camera3D):
 
-    def __init__(self, position=(0, 0, 0), direction=(0, 0, -1), fov=45, move_speed=(30, 30), rot_speed=(90, 60)):
+    def __init__(self, position=(0, 0, 0), direction=(0, 0, -1), fov=45,
+                 move_speed=(30*_ADJUST, 30*_ADJUST),
+                 rot_speed=(90*_ADJUST, 60*_ADJUST)):
         super().__init__(position=position, direction=direction, fov=fov)
         self.hrot_speed = rot_speed[0]
         self.vrot_speed = rot_speed[1]

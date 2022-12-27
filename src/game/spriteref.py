@@ -16,11 +16,14 @@ _3D_TEXTURES = {}  # sheet_id -> TextureSheet
 class TextureSheetTypes:
     ALL_TYPES = []
     RAINBOW = util.add_to_list(("rainbow", "assets/models/rainbow.png"), ALL_TYPES)
+    WHITE = util.add_to_list(("white", "assets/models/white.png"), ALL_TYPES)
     FORKLIFT_DEFAULT = util.add_to_list(("forklift_default", "assets/models/forklift_default.png"), ALL_TYPES)
 
 
 class ThreeDeeModels:
     FORKLIFT = None
+    SQUARE = None
+    CUBE = None
 
     _2D_MODEL_CACHE = {}  # ImageModel -> ThreeDeeModel
 
@@ -33,8 +36,9 @@ class ThreeDeeModels:
     @staticmethod
     def load_models_from_disk():
         xform = lambda ident: ThreeDeeModels._get_xform_for_texture(ident)
-        ThreeDeeModels.FORKLIFT = threedee.ThreeDeeModel.load_from_disk("forklift", "assets/models/forklift.obj",
-                                                                        xform("forklift_default"))
+        ThreeDeeModels.FORKLIFT = threedee.ThreeDeeModel.load_from_disk("forklift", "assets/models/forklift.obj", xform("forklift_default"))
+        ThreeDeeModels.SQUARE = threedee.ThreeDeeModel.load_from_disk("square", "assets/models/square.obj", xform("white"))
+        ThreeDeeModels.CUBE = threedee.ThreeDeeModel.load_from_disk("cube", "assets/models/cube.obj", xform("white"))
 
     @staticmethod
     def from_2d_model(model_2d):

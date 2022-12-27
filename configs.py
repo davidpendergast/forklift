@@ -14,7 +14,7 @@ minimum_window_size = (320, 240)  # if the window is smaller than this, it will 
 allow_fullscreen = True
 allow_window_resize = True
 
-clear_color = (0.66, 0.66, 0.66)
+clear_color = (0.666, 0.666, 0.666)
 
 
 """ Pixel Scaling """
