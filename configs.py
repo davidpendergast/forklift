@@ -40,7 +40,30 @@ key_repeat_delay = 30  # keys held for longer than this many ticks will start to
 key_repeat_period = 5  # after the delay has passed, the key will be typed every X ticks until released
 
 
+""" Keybinds """
+MOVE_UP = "up"
+MOVE_LEFT = "left"
+MOVE_RIGHT = "right"
+MOVE_DOWN = "down"
+JUMP = "jump"
+CROUCH = "crouch"
+
+ENTER = "enter"
+ESCAPE = "escape"
+
+ROTATE_UP = "rot_up"
+ROTATE_LEFT = "rot_left"
+ROTATE_RIGHT = "rot_right"
+ROTATE_DOWN = "rot_down"
+
+DEBUG_TOGGLE_WIREFRAME = "toggle_wireframe"
+DEBUG_TOGGLE_TEXTURES = "toggle_textures"
+DEBUG_INCREASE_CAMERA_FOV = "increase_fov"
+DEBUG_DECREASE_CAMERA_FOV = "decrease_fov"
+DEBUG_TOGGLE_FREE_CAMERA = "toggle_freecam"
+DEBUG_TOGGLE_ORTHO_CAMERA = "toggle_ortho_camera"
+
+
 """ 3D Debug """
 rainbow_3d = False
-wireframe_3d = False
 

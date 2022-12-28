@@ -3,6 +3,7 @@ import random
 
 import pygame
 
+import configs
 import src.utils.util as util
 import src.utils.colorutils as colorutils
 
@@ -60,10 +61,9 @@ class Test3DMenu(scenes.Scene):
             self.sprites = _build_demo_sprites()
         else:
             self.sprites = [threedee.Sprite3D(m, spriteref.LAYER_3D) for m in util.listify(models)]
-        self.camera = threedee.KeyboardControlledCamera3D((-20, 2, 0), (1, 0, 0), fov=25)
+        self.camera = threedee.KeyboardControlledCamera3D((-20, 2, 0), (1, 0, 0))
 
         self.lock_cam_to_model = False
-        self.perspective_cam = True
 
         self.debug_info = {}
         self.debug_info_sprite = None
@@ -100,11 +100,16 @@ class Test3DMenu(scenes.Scene):
         self.debug_info_sprite.update(new_text=text)
 
     def update(self):
-        if inputs.get_instance().was_pressed(pygame.K_l):
+        if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_FREE_CAMERA):
             self.lock_cam_to_model = not self.lock_cam_to_model
-        if inputs.get_instance().was_pressed(pygame.K_o):
-            self.perspective_cam = not self.perspective_cam
-            renderengine.get_instance().get_layer(spriteref.LAYER_3D).set_use_perspective(self.perspective_cam)
+
+        layer3d = renderengine.get_instance().get_layer(spriteref.LAYER_3D)
+        if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_ORTHO_CAMERA):
+            layer3d.set_use_perspective(not layer3d.use_perspective)
+        if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_TEXTURES):
+            layer3d.set_show_textures(not layer3d.show_textures)
+        if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_WIREFRAME):
+            layer3d.set_show_wireframe(not layer3d.show_wireframe)
 
         self.camera.update()
 

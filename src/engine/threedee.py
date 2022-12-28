@@ -100,14 +100,14 @@ class KeyboardControlledCamera3D(Camera3D):
             direction.y = temp[2]
             direction.z = temp[1]
         else:
-            view_dx = inputs.get_instance().is_held_two_way(pygame.K_LEFT, pygame.K_RIGHT)
+            view_dx = inputs.get_instance().is_held_two_way(configs.ROTATE_LEFT, configs.ROTATE_RIGHT)
             if view_dx != 0:
                 xz = pygame.Vector2(direction.x, direction.z)
                 xz = xz.rotate(self.hrot_speed * dt_secs * view_dx)
                 direction.x = xz[0]
                 direction.z = xz[1]
 
-            view_dy = inputs.get_instance().is_held_two_way(pygame.K_DOWN, pygame.K_UP)
+            view_dy = inputs.get_instance().is_held_two_way(configs.ROTATE_DOWN, configs.ROTATE_UP)
             if view_dy != 0:
                 dir_spherical = pygame.Vector3(direction.x, direction.z, direction.y).as_spherical()
                 new_angle = dir_spherical[1] - self.vrot_speed * dt_secs * view_dy
@@ -125,25 +125,26 @@ class KeyboardControlledCamera3D(Camera3D):
         view_xz.scale_to_length(1)
 
         xz = pygame.Vector2(position.x, position.z)
-        move_dxz = inputs.get_instance().is_held_four_way(left=pygame.K_a, right=pygame.K_d,
-                                                          posy=pygame.K_w, negy=pygame.K_s)
+        move_dxz = inputs.get_instance().is_held_four_way(left=configs.MOVE_LEFT, right=configs.MOVE_RIGHT,
+                                                          posy=configs.MOVE_UP, negy=configs.MOVE_DOWN)
         if move_dxz[0] != 0:
             xz = xz + ms * view_xz.rotate(90 * move_dxz[0])
         if move_dxz[1] != 0:
             xz = xz + ms * view_xz.rotate(180 * (move_dxz[1] - 1) / 2)
 
         y = position.y
-        move_dz = inputs.get_instance().is_held_two_way(pygame.K_c, pygame.K_SPACE)
+        move_dz = inputs.get_instance().is_held_two_way(configs.CROUCH, configs.JUMP)
         if move_dz != 0:
             y += self.fly_speed * dt_secs * move_dz
 
         self.set_direction(direction)
         self.set_position((xz[0], y, xz[1]))
 
-        if inputs.get_instance().was_pressed(pygame.K_f):
+        dfov = inputs.get_instance().was_pressed_two_way(configs.DEBUG_DECREASE_CAMERA_FOV,
+                                                         configs.DEBUG_INCREASE_CAMERA_FOV)
+        if dfov != 0:
             dfov = -5 if inputs.get_instance().shift_is_held() else 5
             self.set_fov(self.get_fov() + dfov)
-            print(f"INFO: set camera FOV to {self.get_fov()}")
 
 
 class ThreeDeeLayer(layers.ImageLayer):
@@ -151,11 +152,9 @@ class ThreeDeeLayer(layers.ImageLayer):
     def __init__(self, layer_id, layer_z):
         super().__init__(layer_id, layer_z)
         self.camera = Camera3D()
-        self.use_perspective = True
-
-        # self.vertices = numpy.array([], dtype=float)
-        # self.tex_coords = numpy.array([], dtype=float)
-        # self.indices = numpy.array([], dtype=float)
+        self.use_perspective = True  # False for ortho
+        self.show_textures = True
+        self.show_wireframe = True
 
     def set_camera(self, cam):
         self.camera = cam.get_snapshot()
@@ -163,6 +162,12 @@ class ThreeDeeLayer(layers.ImageLayer):
     def set_use_perspective(self, val):
         """Set whether to use a perspective or orthographic camera."""
         self.use_perspective = val
+
+    def set_show_wireframe(self, val):
+        self.show_wireframe = val
+
+    def set_show_textures(self, val):
+        self.show_textures = val
 
     def accepts_sprite_type(self, sprite_type):
         return sprite_type == sprites.SpriteTypes.THREE_DEE
@@ -180,10 +185,16 @@ class ThreeDeeLayer(layers.ImageLayer):
         return res
 
     def render(self, engine):
+        if self.show_wireframe:
+            self.render_internal(engine, wireframe=True)
+        if self.show_textures:
+            self.render_internal(engine)
+
+    def render_internal(self, engine, wireframe=False):
         if not engine.is_opengl():
             return  # doesn't work in non-OpenGL mode, for obvious reasons
 
-        self.set_client_states(True, engine)
+        self.set_client_states(True, engine, wireframe=wireframe)
         self._set_uniforms_for_scene(engine)
 
         model_ids_to_sprites = self.get_sprites_grouped_by_model_id(engine)
@@ -194,13 +205,13 @@ class ThreeDeeLayer(layers.ImageLayer):
 
             # draw each sprite with that model, using the same data, but different uniforms
             for spr_3d in model_ids_to_sprites[model_id]:
-                self._set_uniforms_for_sprite(engine, spr_3d)
+                self._set_uniforms_for_sprite(engine, spr_3d, wireframe=wireframe)
                 indices = self.opaque_data_arrays.indices
                 glDrawElements(GL_TRIANGLES, len(indices), GL_UNSIGNED_INT, indices)
 
-        self.set_client_states(False, engine)
+        self.set_client_states(False, engine, wireframe=wireframe)
 
-    def set_client_states(self, enable, engine):
+    def set_client_states(self, enable, engine, wireframe=False):
         engine.set_vertices_enabled(enable)
         engine.set_texture_coords_enabled(enable)
         engine.set_alpha_test_enabled(enable)
@@ -209,14 +220,13 @@ class ThreeDeeLayer(layers.ImageLayer):
         if enable:
             glEnable(GL_DEPTH_TEST)
             glEnable(GL_CULL_FACE)
-            if configs.wireframe_3d:
+            if wireframe:
                 glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
         else:
             engine.set_global_color(None)
             glDisable(GL_DEPTH_TEST)
             glDisable(GL_CULL_FACE)
-            if configs.wireframe_3d:
-                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
 
     def get_view_matrix(self):
         target_pt = util.add(self.camera.get_position(), self.camera.get_direction())
@@ -228,7 +238,7 @@ class ThreeDeeLayer(layers.ImageLayer):
         if self.use_perspective:
             return matutils.perspective_matrix(self.camera.get_fov() / 360 * 6.283, w / h, znear, zfar)
         else:
-            zoom = 5
+            zoom = 5 * self.camera.get_fov() / 45
             return matutils.ortho_matrix(-zoom, zoom, -zoom * h / w, zoom * h / w, znear, zfar)
 
     def get_camera_up(self):
@@ -241,10 +251,10 @@ class ThreeDeeLayer(layers.ImageLayer):
         proj = self.get_proj_matrix(engine)
         engine.set_proj_matrix(proj)
 
-    def _set_uniforms_for_sprite(self, engine, spr_3d: 'Sprite3D'):
+    def _set_uniforms_for_sprite(self, engine, spr_3d: 'Sprite3D', wireframe=False):
         model = spr_3d.get_xform(camera_pos=self.camera.get_position())
         engine.set_model_matrix(model)
-        engine.set_global_color(spr_3d.color())
+        engine.set_global_color(spr_3d.color() if not wireframe else (0, 0, 0))
 
     def _pass_attributes_for_model(self, engine, model_3d):
         oda = self.opaque_data_arrays

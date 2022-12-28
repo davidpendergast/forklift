@@ -9,6 +9,7 @@ import src.engine.sprites as sprites
 import src.engine.layers as layers
 import src.engine.readme_writer as readme_writer
 import src.utils.util as util
+import src.engine.keybinds as keybinds
 import configs
 
 import src.game.spriteref as spriteref
@@ -27,6 +28,29 @@ class ForkliftGame(game.Game):
     def initialize(self):
         if configs.is_dev:
             _update_readme()
+
+        kb = keybinds.get_instance()
+        kb.set_binding(configs.MOVE_UP, keybinds.Binding(pygame.K_w, mods=(pygame.KMOD_NONE)))
+        kb.set_binding(configs.MOVE_LEFT, pygame.K_a)
+        kb.set_binding(configs.MOVE_RIGHT, pygame.K_d)
+        kb.set_binding(configs.MOVE_DOWN, pygame.K_s)
+        kb.set_binding(configs.JUMP, pygame.K_SPACE)
+        kb.set_binding(configs.CROUCH, pygame.K_c)
+
+        kb.set_binding(configs.ENTER, pygame.K_RETURN)
+        kb.set_binding(configs.ESCAPE, pygame.K_ESCAPE)
+
+        kb.set_binding(configs.ROTATE_UP, pygame.K_UP)
+        kb.set_binding(configs.ROTATE_LEFT, pygame.K_LEFT)
+        kb.set_binding(configs.ROTATE_RIGHT, pygame.K_RIGHT)
+        kb.set_binding(configs.ROTATE_DOWN, pygame.K_DOWN)
+
+        kb.set_binding(configs.DEBUG_TOGGLE_WIREFRAME, keybinds.Binding(pygame.K_w, mods=(pygame.KMOD_CTRL)))
+        kb.set_binding(configs.DEBUG_TOGGLE_TEXTURES, keybinds.Binding(pygame.K_t, mods=(pygame.KMOD_CTRL)))
+        kb.set_binding(configs.DEBUG_INCREASE_CAMERA_FOV, keybinds.Binding(pygame.K_f, mods=(pygame.KMOD_NONE)))
+        kb.set_binding(configs.DEBUG_DECREASE_CAMERA_FOV, keybinds.Binding(pygame.K_f, mods=(pygame.KMOD_SHIFT)))
+        kb.set_binding(configs.DEBUG_TOGGLE_FREE_CAMERA, pygame.K_l)
+        kb.set_binding(configs.DEBUG_TOGGLE_ORTHO_CAMERA, pygame.K_o)
 
         globaltimer.set_show_fps(True)
         scenes.create_instance(menus.Test3DMenu())
