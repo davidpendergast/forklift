@@ -1,6 +1,7 @@
 import time
 
 _TICK_COUNT = 0
+_ELAPSED_TIME = 0
 
 _DT = 0  # delta time of the current frame, in milliseconds
 _DT_RATIO = 1
@@ -41,9 +42,10 @@ def dt():
 
 def set_dt(dt_millis, target_dt=None):
     """Sets the delta time for the current frame, in milliseconds."""
-    global _DT, _DT_RATIO
+    global _DT, _DT_RATIO, _ELAPSED_TIME
     _DT = dt_millis
     _DT_RATIO = 1 if target_dt is None else dt_millis / target_dt
+    _ELAPSED_TIME += dt_millis
 
 
 def dt_ratio():
@@ -62,6 +64,10 @@ def get_fps():
         return 999
     else:
         return (len(_TICK_TIMES) - 1) / elapsed_time
+
+
+def get_elapsed_time():
+    return _ELAPSED_TIME
 
 
 def get_show_fps():

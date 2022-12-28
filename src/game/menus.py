@@ -1,3 +1,6 @@
+import math
+import random
+
 import pygame
 
 import src.utils.util as util
@@ -23,20 +26,26 @@ def _build_demo_sprites():
     for e in w.all_entities():
         if isinstance(e, world.Forklift):  # need the forklift to be first for lock-on
             x, z, y = e.xyz
-            res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT, spriteref.LAYER_3D,
-                                         position=(x + 0.5, y / 8, z + 0.5),
-                                         scale=(0.1, 0.1, 0.1),
-                                         rotation=(0, 0, 0)))
+            flift = threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT, spriteref.LAYER_3D,
+                                      position=(x + 0.5, y / 8 + 0.001, z + 0.5),
+                                      scale=(0.1, 0.1, 0.1),
+                                      rotation=(0, 0, 0))
+            flift.color = lambda: colorutils.rainbow(globaltimer.get_elapsed_time(), 1000, s=0.5)
+            res.append(flift)
+
+    sc = 4
     for t_xy in w.terrain:
         x, y = t_xy
         z = w.terrain[t_xy]
         res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.SQUARE, spriteref.LAYER_3D,
-                                     (x, z, y), color=(0.15, 0.15, 0.15)))  # coordinates man
+                                     (x, z, y), color=(0.15, 0.15, 0.15), scale=(sc, sc, sc)))  # coordinates man
+
+    sc = 2
     for e in w.all_entities():
         if isinstance(e, world.Block):
             bb = e.get_bounding_box()
             res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.CUBE, spriteref.LAYER_3D,
-                                         position=(bb[0], bb[2], bb[1]), scale=(bb[3], bb[5] / 8, bb[4]),
+                                         position=(bb[0], bb[2], bb[1]), scale=(sc * bb[3], sc * bb[5] / 8, sc * bb[4]),
                                          color=(colorutils.to_float(e.get_debug_color()))))
 
     return res

@@ -75,8 +75,16 @@ def is_transparent(color, pcnt_thresh=0) -> bool:
         return color[3] <= pcnt_thresh
 
 
-def hsv_to_rgb(h, s, v) -> typing.Tuple[float, float, float]:
+def rainbow(t, period, s=0.5, v=1.):
+    """Provides a color that changes hue over time.
+    :returns: (r, g, b) as floats
     """
+    h = int(t / period * 360) % 360
+    return hsv_to_rgb(h, s, v)
+
+
+def hsv_to_rgb(h, s, v) -> typing.Tuple[float, float, float]:
+    """Converts an HSV color to RGB.
     :param h: 0 <= h < 360
     :param s: 0 <= s <= 1
     :param v: 0 <= v <= 1

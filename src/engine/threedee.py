@@ -59,7 +59,7 @@ class KeyboardControlledCamera3D(Camera3D):
 
     def __init__(self, position=(0, 0, 0), direction=(0, 0, -1), fov=45,
                  move_speed=(30*_ADJUST, 30*_ADJUST),
-                 rot_speed=(90*_ADJUST, 60*_ADJUST)):
+                 rot_speed=(60, 45)):
         super().__init__(position=position, direction=direction, fov=fov)
         self.hrot_speed = rot_speed[0]
         self.vrot_speed = rot_speed[1]
@@ -153,9 +153,9 @@ class ThreeDeeLayer(layers.ImageLayer):
         self.camera = Camera3D()
         self.use_perspective = True
 
-        self.vertices = numpy.array([], dtype=float)
-        self.tex_coords = numpy.array([], dtype=float)
-        self.indices = numpy.array([], dtype=float)
+        # self.vertices = numpy.array([], dtype=float)
+        # self.tex_coords = numpy.array([], dtype=float)
+        # self.indices = numpy.array([], dtype=float)
 
     def set_camera(self, cam):
         self.camera = cam.get_snapshot()
@@ -195,7 +195,8 @@ class ThreeDeeLayer(layers.ImageLayer):
             # draw each sprite with that model, using the same data, but different uniforms
             for spr_3d in model_ids_to_sprites[model_id]:
                 self._set_uniforms_for_sprite(engine, spr_3d)
-                glDrawElements(GL_TRIANGLES, len(self.indices), GL_UNSIGNED_INT, self.indices)
+                indices = self.opaque_data_arrays.indices
+                glDrawElements(GL_TRIANGLES, len(indices), GL_UNSIGNED_INT, indices)
 
         self.set_client_states(False, engine)
 
@@ -211,6 +212,7 @@ class ThreeDeeLayer(layers.ImageLayer):
             if configs.wireframe_3d:
                 glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
         else:
+            engine.set_global_color(None)
             glDisable(GL_DEPTH_TEST)
             glDisable(GL_CULL_FACE)
             if configs.wireframe_3d:
@@ -242,18 +244,18 @@ class ThreeDeeLayer(layers.ImageLayer):
     def _set_uniforms_for_sprite(self, engine, spr_3d: 'Sprite3D'):
         model = spr_3d.get_xform(camera_pos=self.camera.get_position())
         engine.set_model_matrix(model)
+        engine.set_global_color(spr_3d.color())
 
     def _pass_attributes_for_model(self, engine, model_3d):
-        self.vertices.resize(3 * len(model_3d.get_vertices()), refcheck=False)
-        self.tex_coords.resize(2 * len(model_3d.get_texture_coords()), refcheck=False)
-        self.indices.resize(len(model_3d.get_indices()), refcheck=False)
+        oda = self.opaque_data_arrays
+        oda.vertices.resize(3 * len(model_3d.get_vertices()), refcheck=False)
+        oda.tex_coords.resize(2 * len(model_3d.get_texture_coords()), refcheck=False)
+        oda.indices.resize(len(model_3d.get_indices()), refcheck=False)
 
-        model_3d.add_urself(self.vertices,
-                            self.tex_coords,
-                            self.indices)
+        model_3d.add_urself(oda.vertices, oda.tex_coords, oda.indices)
 
-        engine.set_vertices(self.vertices)
-        engine.set_texture_coords(self.tex_coords)
+        engine.set_vertices(oda.vertices)
+        engine.set_texture_coords(oda.tex_coords)
 
 
 class Sprite3D(sprites.AbstractSprite):
@@ -266,7 +268,7 @@ class Sprite3D(sprites.AbstractSprite):
         self._rotation = rotation   # rotation of the model in each plane w.r.t. the origin
         self._scale = scale         # scale of the model in each axis
 
-        self._color = color  # not used currently
+        self._color = color
 
     def model(self) -> 'ThreeDeeModel':
         return self._model

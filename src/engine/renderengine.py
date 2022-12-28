@@ -246,6 +246,9 @@ class RenderEngine:
     def set_proj_matrix(self, mat):
         raise NotImplementedError()
 
+    def set_global_color(self, color):
+        raise NotImplementedError()
+
     def set_camera_2d(self, offs2d, scale=(1, 1)):
         """
             Convenience method. Can be called instead of the three `set_XXX_matrix()`
@@ -432,6 +435,7 @@ class RenderEngine130(RenderEngine):
         self._model_matrix_uniform_loc = None
         self._view_matrix_uniform_loc = None
         self._proj_matrix_uniform_loc = None
+        self._global_color_uniform_loc = None
 
         self._position_attrib_loc = None
         self._texture_pos_attrib_loc = None
@@ -440,6 +444,7 @@ class RenderEngine130(RenderEngine):
         self._model_matrix = numpy.identity(4, dtype=numpy.float32)
         self._view_matrix = numpy.identity(4, dtype=numpy.float32)
         self._proj_matrix = numpy.identity(4, dtype=numpy.float32)
+        self._global_color = (1., 1., 1.)
 
     def get_glsl_version(self):
         return "130"
@@ -474,6 +479,7 @@ class RenderEngine130(RenderEngine):
             
             uniform vec2 texSize;
             uniform sampler2D tex0;
+            uniform vec3 globalColor;
 
             void main(void) {
                 vec2 texPos = vec2(texCoord.x / texSize.x, texCoord.y / texSize.y);
@@ -481,9 +487,9 @@ class RenderEngine130(RenderEngine):
                 
                 for (int i = 0; i < 3; i++) {
                     if (tcolor[i] >= 0.99) {
-                        gl_FragColor[i] = tcolor[i] * color[i];
+                        gl_FragColor[i] = tcolor[i] * color[i] * globalColor[i];
                     } else {
-                        gl_FragColor[i] = tcolor[i] * color[i] * color[i];                    
+                        gl_FragColor[i] = tcolor[i] * color[i] * color[i] * globalColor[i];                    
                     }
                 }
                 
@@ -506,6 +512,10 @@ class RenderEngine130(RenderEngine):
 
         self._tex_size_uniform_loc = glGetUniformLocation(prog_id, "texSize")
         self._assert_valid_var("texSize", self._tex_size_uniform_loc)
+        printOpenGLError()
+
+        self._global_color_uniform_loc = glGetUniformLocation(prog_id, "globalColor")
+        self._assert_valid_var("globalColor", self._global_color_uniform_loc)
         printOpenGLError()
 
         self._model_matrix_uniform_loc = glGetUniformLocation(prog_id, "model")
@@ -549,6 +559,11 @@ class RenderEngine130(RenderEngine):
     def set_proj_matrix(self, mat):
         self._proj_matrix = mat if mat is not None else numpy.identity(4, dtype=numpy.float32)
         glUniformMatrix4fv(self._proj_matrix_uniform_loc, 1, GL_TRUE, self._proj_matrix)
+        printOpenGLError()
+
+    def set_global_color(self, color):
+        self._global_color = color if color is not None else (1., 1., 1.)
+        glUniform3f(self._global_color_uniform_loc, *self._global_color)
         printOpenGLError()
 
     def resize_internal(self):
@@ -706,6 +721,11 @@ class PurePygameRenderEngine(RenderEngine):
     def set_view_matrix(self, mat): raise ValueError("set_view_matrix() not supported in RenderEnginePurePygame.")
     def set_model_matrix(self, mat): raise ValueError("set_model_matrix() not supported in RenderEnginePurePygame.")
     def set_proj_matrix(self, mat): raise ValueError("set_proj_matrix() not supported in RenderEnginePurePygame.")
+
+    def set_global_color(self, color): pass
+    def set_depth_test_enabled(self, val): pass
+    def set_depth_write_enabled(self, val): pass
+    def set_alpha_test_enabled(self, val): pass
 
     def resize_internal(self): pass
     def set_vertices_enabled(self, val): pass
