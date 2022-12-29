@@ -45,6 +45,9 @@ class _Layer:
     def vertex_stride(self):
         raise NotImplementedError()
 
+    def normal_stride(self):
+        raise NotImplementedError()
+
     def texture_stride(self):
         raise NotImplementedError()
 
@@ -91,6 +94,7 @@ class ImageDataArray:
         self._size = 0
 
         self.vertices = numpy.array([], dtype=float)
+        self.normals = numpy.array([], dtype=float)
         self.tex_coords = numpy.array([], dtype=float)
         self.indices = numpy.array([], dtype=float)
         self.colors = numpy.array([], dtype=float)
@@ -115,6 +119,7 @@ class ImageDataArray:
 
         # pycharm's debugger likes to hold refs to these in debug mode~
         self.vertices.resize(capacity * self._parent_layer.vertex_stride(), refcheck=False)
+        self.normals.resize(capacity * self._parent_layer.normal_stride(), refcheck=False)
         self.tex_coords.resize(capacity * self._parent_layer.texture_stride(), refcheck=False)
         self.indices.resize(capacity * self._parent_layer.index_stride(), refcheck=False)
         self.colors.resize(capacity * self._parent_layer.color_stride(), refcheck=False)
@@ -190,6 +195,9 @@ class ImageLayer(_Layer):
         return sprite_type == sprites.SpriteTypes.IMAGE
 
     def vertex_stride(self):
+        return 4 * 3
+
+    def normal_stride(self):
         return 4 * 3
 
     def texture_stride(self):
@@ -312,6 +320,9 @@ class PolygonLayer(ImageLayer):
         return sprite_type == sprites.SpriteTypes.TRIANGLE
 
     def vertex_stride(self):
+        return 3 * 3
+
+    def normal_stride(self):
         return 3 * 3
 
     def texture_stride(self):

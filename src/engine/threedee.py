@@ -156,6 +156,9 @@ class ThreeDeeLayer(layers.ImageLayer):
         self.show_textures = True
         self.show_wireframe = True
 
+        self.use_lighting = True
+        self.ambient_lighting = (0.1, None)
+
     def set_camera(self, cam):
         self.camera = cam.get_snapshot()
 
@@ -168,6 +171,12 @@ class ThreeDeeLayer(layers.ImageLayer):
 
     def set_show_textures(self, val):
         self.show_textures = val
+
+    def set_use_lighting(self, val):
+        self.use_lighting = val
+
+    def set_ambient_lighting(self, strength, color):
+        self.ambient_lighting = (strength, color)
 
     def accepts_sprite_type(self, sprite_type):
         return sprite_type == sprites.SpriteTypes.THREE_DEE
@@ -213,6 +222,7 @@ class ThreeDeeLayer(layers.ImageLayer):
 
     def set_client_states(self, enable, engine, wireframe=False):
         engine.set_vertices_enabled(enable)
+        engine.set_normals_enabled(enable)
         engine.set_texture_coords_enabled(enable)
         engine.set_alpha_test_enabled(enable)
         engine.set_depth_test_enabled(enable)
@@ -222,8 +232,12 @@ class ThreeDeeLayer(layers.ImageLayer):
             glEnable(GL_CULL_FACE)
             if wireframe:
                 glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
+            else:
+                engine.set_use_lighting(self.use_lighting)
+                engine.set_ambient_lighting(*self.ambient_lighting)
         else:
             engine.set_global_color(None)
+            engine.set_use_lighting(False)
             glDisable(GL_DEPTH_TEST)
             glDisable(GL_CULL_FACE)
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
@@ -259,12 +273,14 @@ class ThreeDeeLayer(layers.ImageLayer):
     def _pass_attributes_for_model(self, engine, model_3d):
         oda = self.opaque_data_arrays
         oda.vertices.resize(3 * len(model_3d.get_vertices()), refcheck=False)
+        oda.normals.resize(3 * len(model_3d.get_normals()), refcheck=False)
         oda.tex_coords.resize(2 * len(model_3d.get_texture_coords()), refcheck=False)
         oda.indices.resize(len(model_3d.get_indices()), refcheck=False)
 
-        model_3d.add_urself(oda.vertices, oda.tex_coords, oda.indices)
+        model_3d.add_urself(oda.vertices, oda.normals, oda.tex_coords, oda.indices)
 
         engine.set_vertices(oda.vertices)
+        engine.set_normals(oda.normals)
         engine.set_texture_coords(oda.tex_coords)
 
 
@@ -491,9 +507,11 @@ class ThreeDeeModel:
             self._cached_atlas_coords = [self._map_from_texture_to_atlas(xy) for xy in self._native_texture_coords]
         return self._cached_atlas_coords
 
-    def add_urself(self, vertices, tex_coords, indices):
+    def add_urself(self, vertices, normals, tex_coords, indices):
         for i in range(0, 3 * len(self.get_vertices())):
             vertices[i] = self.get_vertices()[i // 3][i % 3]
+        for i in range(0, 3 * len(self.get_normals())):
+            normals[i] = self.get_normals()[i // 3][i % 3]
         for i in range(0, 2 * len(self.get_texture_coords())):
             tex_coords[i] = self.get_texture_coords()[i // 2][i % 2]
         for i in range(0, len(self.get_indices())):
@@ -547,8 +565,6 @@ class ThreeDeeModel:
                     vertex_xyz = raw_vertices[v_idx]
                     texture_xy = raw_native_texture_coords[t_idx] if t_idx >= 0 else None
                     norm_xyz = raw_normals[norm_idx] if norm_idx >= 0 else None
-                    # TODO can probably condense this a bit (only have one index per unique (vertex, texture, normal))
-                    # TODO would that ever matter for most models? probably not?
                     index = len(indices)
 
                     vertices.append(vertex_xyz)

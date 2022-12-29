@@ -61,9 +61,10 @@ class Test3DMenu(scenes.Scene):
             self.sprites = _build_demo_sprites()
         else:
             self.sprites = [threedee.Sprite3D(m, spriteref.LAYER_3D) for m in util.listify(models)]
-        self.camera = threedee.KeyboardControlledCamera3D((-20, 2, 0), (1, 0, 0))
+        self.camera = threedee.KeyboardControlledCamera3D((-3, 1, 1.5), (1, 0, 0))
 
         self.lock_cam_to_model = False
+        self.enable_lighting = True
 
         self.debug_info = {}
         self.debug_info_sprite = None
@@ -110,6 +111,8 @@ class Test3DMenu(scenes.Scene):
             layer3d.set_show_textures(not layer3d.show_textures)
         if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_WIREFRAME):
             layer3d.set_show_wireframe(not layer3d.show_wireframe)
+        if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_LIGHTING):
+            layer3d.set_use_lighting(not layer3d.use_lighting)
 
         self.camera.update()
 

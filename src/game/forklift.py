@@ -49,8 +49,10 @@ class ForkliftGame(game.Game):
         kb.set_binding(configs.DEBUG_TOGGLE_TEXTURES, keybinds.Binding(pygame.K_t, mods=(pygame.KMOD_CTRL)))
         kb.set_binding(configs.DEBUG_INCREASE_CAMERA_FOV, keybinds.Binding(pygame.K_f, mods=(pygame.KMOD_NONE)))
         kb.set_binding(configs.DEBUG_DECREASE_CAMERA_FOV, keybinds.Binding(pygame.K_f, mods=(pygame.KMOD_SHIFT)))
-        kb.set_binding(configs.DEBUG_TOGGLE_FREE_CAMERA, pygame.K_l)
+        kb.set_binding(configs.DEBUG_TOGGLE_FREE_CAMERA, keybinds.Binding(pygame.K_l, mods=(pygame.KMOD_CTRL)))
         kb.set_binding(configs.DEBUG_TOGGLE_ORTHO_CAMERA, pygame.K_o)
+
+        kb.set_binding(configs.DEBUG_TOGGLE_LIGHTING, keybinds.Binding(pygame.K_l, mods=(pygame.KMOD_NONE)))
 
         globaltimer.set_show_fps(True)
         scenes.create_instance(menus.Test3DMenu())

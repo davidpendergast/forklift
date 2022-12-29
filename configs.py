@@ -62,6 +62,7 @@ DEBUG_INCREASE_CAMERA_FOV = "increase_fov"
 DEBUG_DECREASE_CAMERA_FOV = "decrease_fov"
 DEBUG_TOGGLE_FREE_CAMERA = "toggle_freecam"
 DEBUG_TOGGLE_ORTHO_CAMERA = "toggle_ortho_camera"
+DEBUG_TOGGLE_LIGHTING = "toggle_lighting"
 
 
 """ 3D Debug """

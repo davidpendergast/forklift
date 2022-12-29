@@ -249,6 +249,12 @@ class RenderEngine:
     def set_global_color(self, color):
         raise NotImplementedError()
 
+    def set_use_lighting(self, val):
+        raise NotImplementedError()
+
+    def set_ambient_lighting(self, strength, color):
+        raise NotImplementedError()
+
     def set_camera_2d(self, offs2d, scale=(1, 1)):
         """
             Convenience method. Can be called instead of the three `set_XXX_matrix()`
@@ -272,6 +278,12 @@ class RenderEngine:
         raise NotImplementedError()
 
     def set_vertices(self, data):
+        raise NotImplementedError()
+
+    def set_normals_enabled(self, val):
+        raise NotImplementedError()
+
+    def set_normals(self, data):
         raise NotImplementedError()
 
     def set_texture_coords_enabled(self, val):
@@ -435,16 +447,34 @@ class RenderEngine130(RenderEngine):
         self._model_matrix_uniform_loc = None
         self._view_matrix_uniform_loc = None
         self._proj_matrix_uniform_loc = None
+
         self._global_color_uniform_loc = None
 
+        self._enable_lighting_loc = None
+        self._ambient_lighting_strength_loc = None
+        self._ambient_lighting_color_loc = None
+        self._diffuse_lighting_strength_loc = None
+        self._diffuse_lighting_position_loc = None
+        self._diffuse_lighting_color_loc = None
+
         self._position_attrib_loc = None
+        self._normal_attrib_loc = None
         self._texture_pos_attrib_loc = None
         self._color_attrib_loc = None
 
         self._model_matrix = numpy.identity(4, dtype=numpy.float32)
         self._view_matrix = numpy.identity(4, dtype=numpy.float32)
         self._proj_matrix = numpy.identity(4, dtype=numpy.float32)
+
         self._global_color = (1., 1., 1.)
+
+        self._enable_lighting = False
+        self._ambient_lighting_strength = 0.1
+        self._ambient_lighting_color = (1., 1., 1.)
+
+        self._diffuse_lighting_strength = 1.0
+        self._diffuse_lighting_position = (2.5, 1., 4.)
+        self._diffuse_lighting_color = (1., 1., 1.)
 
     def get_glsl_version(self):
         return "130"
@@ -459,6 +489,10 @@ class RenderEngine130(RenderEngine):
             uniform mat4 view;
             uniform mat4 proj;
             
+            in vec3 vNormal;
+            out vec3 normal;
+            out vec3 fragPos;
+            
             in vec2 vTexCoord;
             out vec2 texCoord;
             
@@ -469,30 +503,47 @@ class RenderEngine130(RenderEngine):
             {
                 texCoord = vTexCoord;
                 color = vColor;
+                normal = vNormal;
                 gl_Position = proj * view * model * vec4(position, 1.0);
+                fragPos = vec3(model * vec4(position, 1.0));
             }
             ''',
             '''
             #version 130
             in vec2 texCoord;
             in vec3 color;
+            in vec3 normal;
+            in vec3 fragPos;
             
             uniform vec2 texSize;
             uniform sampler2D tex0;
             uniform vec3 globalColor;
+            
+            uniform int enableLighting;
+            uniform float ambientLightStrength;
+            uniform vec3 ambientLightColor;
+            
+            uniform vec3 diffuseLightPosition;
+            uniform float diffuseLightStrength;
+            uniform vec3 diffuseLightColor;
 
             void main(void) {
                 vec2 texPos = vec2(texCoord.x / texSize.x, texCoord.y / texSize.y);
                 vec4 tcolor = texture2D(tex0, texPos);
                 
-                for (int i = 0; i < 3; i++) {
-                    if (tcolor[i] >= 0.99) {
-                        gl_FragColor[i] = tcolor[i] * color[i] * globalColor[i];
-                    } else {
-                        gl_FragColor[i] = tcolor[i] * color[i] * color[i] * globalColor[i];                    
-                    }
+                vec3 ambient = vec3(0.5, 0.5, 0.5);
+                vec3 diffuse = vec3(0.5, 0.5, 0.5);
+                
+                if (enableLighting != 0) {
+                    ambient = ambientLightColor * ambientLightStrength;
+                    
+                    vec3 norm = normalize(normal);
+                    vec3 lightDir = normalize(diffuseLightPosition - fragPos);
+                    float diff = max(dot(norm, lightDir), 0.0) * diffuseLightStrength;
+                    diffuse = diff * diffuseLightColor;
                 }
                 
+                gl_FragColor.xyz = tcolor.xyz * color * color * globalColor * (ambient + diffuse);
                 gl_FragColor.w = tcolor.w;
             }
             '''
@@ -514,10 +565,6 @@ class RenderEngine130(RenderEngine):
         self._assert_valid_var("texSize", self._tex_size_uniform_loc)
         printOpenGLError()
 
-        self._global_color_uniform_loc = glGetUniformLocation(prog_id, "globalColor")
-        self._assert_valid_var("globalColor", self._global_color_uniform_loc)
-        printOpenGLError()
-
         self._model_matrix_uniform_loc = glGetUniformLocation(prog_id, "model")
         self._assert_valid_var("model", self._model_matrix_uniform_loc)
         glUniformMatrix4fv(self._model_matrix_uniform_loc, 1, GL_TRUE, self._model_matrix)
@@ -533,8 +580,42 @@ class RenderEngine130(RenderEngine):
         glUniformMatrix4fv(self._proj_matrix_uniform_loc, 1, GL_TRUE, self._proj_matrix)
         printOpenGLError()
 
+        self._global_color_uniform_loc = glGetUniformLocation(prog_id, "globalColor")
+        self._assert_valid_var("globalColor", self._global_color_uniform_loc)
+        printOpenGLError()
+
+        self._enable_lighting_loc = glGetUniformLocation(prog_id, "enableLighting")
+        self._assert_valid_var("enableLighting", self._enable_lighting_loc)
+        glUniform1i(self._enable_lighting_loc, GL_TRUE if self._enable_lighting else GL_FALSE)
+        printOpenGLError()
+
+        self._ambient_lighting_strength_loc = glGetUniformLocation(prog_id, "ambientLightStrength")
+        self._assert_valid_var("ambientLightStrength", self._ambient_lighting_strength_loc)
+        glUniform1f(self._ambient_lighting_strength_loc, self._ambient_lighting_strength)
+        printOpenGLError()
+
+        self._ambient_lighting_color_loc = glGetUniformLocation(prog_id, "ambientLightColor")
+        self._assert_valid_var("ambientLightColor", self._ambient_lighting_color_loc)
+        glUniform3f(self._ambient_lighting_color_loc, *self._ambient_lighting_color)
+        printOpenGLError()
+
+        self._diffuse_lighting_strength_loc = glGetUniformLocation(prog_id, "diffuseLightStrength")
+        self._assert_valid_var("diffuseLightStrength", self._diffuse_lighting_strength_loc)
+        glUniform1f(self._diffuse_lighting_strength_loc, self._diffuse_lighting_strength)
+
+        self._diffuse_lighting_position_loc = glGetUniformLocation(prog_id, "diffuseLightPosition")
+        self._assert_valid_var("diffuseLightPosition", self._diffuse_lighting_position_loc)
+        glUniform3f(self._diffuse_lighting_position_loc, *self._diffuse_lighting_position)
+
+        self._diffuse_lighting_color_loc = glGetUniformLocation(prog_id, "diffuseLightColor")
+        self._assert_valid_var("diffuseLightColor", self._diffuse_lighting_color_loc)
+        glUniform3f(self._diffuse_lighting_color_loc, *self._diffuse_lighting_color)
+
         self._position_attrib_loc = glGetAttribLocation(prog_id, "position")
         self._assert_valid_var("position", self._position_attrib_loc)
+
+        self._normal_attrib_loc = glGetAttribLocation(prog_id, "vNormal")
+        self._assert_valid_var("vNormal", self._normal_attrib_loc)
 
         self._texture_pos_attrib_loc = glGetAttribLocation(prog_id, "vTexCoord")
         self._assert_valid_var("vTexCoord", self._texture_pos_attrib_loc)
@@ -565,6 +646,27 @@ class RenderEngine130(RenderEngine):
         self._global_color = color if color is not None else (1., 1., 1.)
         glUniform3f(self._global_color_uniform_loc, *self._global_color)
         printOpenGLError()
+
+    def set_use_lighting(self, val):
+        self._enable_lighting = GL_TRUE if val else GL_FALSE
+        glUniform1i(self._enable_lighting_loc, self._enable_lighting)
+        printOpenGLError()
+
+    def set_ambient_lighting(self, strength, color=(1., 1., 1.)):
+        self._ambient_lighting_strength = strength if strength is not None else 0.1
+        glUniform1f(self._ambient_lighting_strength_loc, self._ambient_lighting_strength)
+        printOpenGLError()
+
+        self._ambient_lighting_color = color if color is not None else (1., 1., 1.)
+        glUniform3f(self._ambient_lighting_color_loc, *self._ambient_lighting_color)
+        printOpenGLError()
+
+    def set_diffuse_lighting(self, pos, strength=1.0, color=(1., 1., 1.)):
+        self._diffuse_lighting_position = pos if pos is not None else (0., 0., 0.)
+        self._diffuse_lighting_strength = strength if strength is not None else 1.0
+        self._diffuse_lighting_color = color if color is not None else (1., 1., 1.)
+        if pos is None:
+            self._diffuse_lighting_strength = 0.0
 
     def resize_internal(self):
         self.set_proj_matrix(numpy.identity(4, dtype=numpy.float32))
@@ -604,6 +706,17 @@ class RenderEngine130(RenderEngine):
 
     def set_vertices(self, data):
         glVertexAttribPointer(self._position_attrib_loc, 3, GL_FLOAT, GL_FALSE, 0, data)
+        printOpenGLError()
+
+    def set_normals_enabled(self, val):
+        if val:
+            glEnableVertexAttribArray(self._normal_attrib_loc)
+        else:
+            glDisableVertexAttribArray(self._normal_attrib_loc)
+        printOpenGLError()
+
+    def set_normals(self, data):
+        glVertexAttribPointer(self._normal_attrib_loc, 3, GL_FLOAT, GL_FALSE, 0, data)
         printOpenGLError()
 
     def set_texture_coords_enabled(self, val):
