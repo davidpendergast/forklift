@@ -259,6 +259,9 @@ class ThreeDeeLayer(layers.ImageLayer):
         return self.camera.get_up_vector()
 
     def _set_uniforms_for_scene(self, engine):
+        eye = self.camera.get_position()
+        engine.set_eye_pos(eye)
+
         view = self.get_view_matrix()
         engine.set_view_matrix(view)
 

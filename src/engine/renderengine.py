@@ -444,6 +444,7 @@ class RenderEngine130(RenderEngine):
         self._tex_uniform_loc = None
         self._tex_size_uniform_loc = None
 
+        self._eye_pos_uniform_loc = None
         self._model_matrix_uniform_loc = None
         self._view_matrix_uniform_loc = None
         self._proj_matrix_uniform_loc = None
@@ -456,12 +457,14 @@ class RenderEngine130(RenderEngine):
         self._diffuse_lighting_strength_loc = None
         self._diffuse_lighting_position_loc = None
         self._diffuse_lighting_color_loc = None
+        self._specular_lighting_strength_loc = None
 
         self._position_attrib_loc = None
         self._normal_attrib_loc = None
         self._texture_pos_attrib_loc = None
         self._color_attrib_loc = None
 
+        self._eye_pos = (0, 0, 0)
         self._model_matrix = numpy.identity(4, dtype=numpy.float32)
         self._view_matrix = numpy.identity(4, dtype=numpy.float32)
         self._proj_matrix = numpy.identity(4, dtype=numpy.float32)
@@ -475,6 +478,8 @@ class RenderEngine130(RenderEngine):
         self._diffuse_lighting_strength = 1.0
         self._diffuse_lighting_position = (2.5, 1., 4.)
         self._diffuse_lighting_color = (1., 1., 1.)
+
+        self._specular_lighting_strength = 0.9
 
     def get_glsl_version(self):
         return "130"
@@ -491,6 +496,7 @@ class RenderEngine130(RenderEngine):
             
             in vec3 vNormal;
             out vec3 normal;
+            
             out vec3 fragPos;
             
             in vec2 vTexCoord;
@@ -499,11 +505,13 @@ class RenderEngine130(RenderEngine):
             in vec3 vColor;
             out vec3 color;
     
-            void main()
-            {
+            void main() {
                 texCoord = vTexCoord;
                 color = vColor;
-                normal = vNormal;
+                
+                // TODO use scale-aware normal matrix
+                normal = mat3(model) * vNormal;
+                
                 gl_Position = proj * view * model * vec4(position, 1.0);
                 fragPos = vec3(model * vec4(position, 1.0));
             }
@@ -526,13 +534,17 @@ class RenderEngine130(RenderEngine):
             uniform vec3 diffuseLightPosition;
             uniform float diffuseLightStrength;
             uniform vec3 diffuseLightColor;
+            
+            uniform vec3 eyePos;
+            uniform float specularStrength;
 
             void main(void) {
                 vec2 texPos = vec2(texCoord.x / texSize.x, texCoord.y / texSize.y);
                 vec4 tcolor = texture2D(tex0, texPos);
                 
-                vec3 ambient = vec3(0.5, 0.5, 0.5);
-                vec3 diffuse = vec3(0.5, 0.5, 0.5);
+                vec3 ambient = vec3(1.0, 1.0, 1.0);
+                vec3 diffuse = vec3(0.0, 0.0, 0.0);
+                vec3 specular = vec3(0.0, 0.0, 0.0);
                 
                 if (enableLighting != 0) {
                     ambient = ambientLightColor * ambientLightStrength;
@@ -541,9 +553,14 @@ class RenderEngine130(RenderEngine):
                     vec3 lightDir = normalize(diffuseLightPosition - fragPos);
                     float diff = max(dot(norm, lightDir), 0.0) * diffuseLightStrength;
                     diffuse = diff * diffuseLightColor;
+                    
+                    vec3 viewDir = normalize(eyePos - fragPos);
+                    vec3 reflectDir = reflect(-lightDir, norm);  
+                    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
+                    specular = specularStrength * spec * diffuseLightColor;  
                 }
                 
-                gl_FragColor.xyz = tcolor.xyz * color * color * globalColor * (ambient + diffuse);
+                gl_FragColor.xyz = tcolor.xyz * color * color * globalColor * (ambient + diffuse + specular);
                 gl_FragColor.w = tcolor.w;
             }
             '''
@@ -563,6 +580,11 @@ class RenderEngine130(RenderEngine):
 
         self._tex_size_uniform_loc = glGetUniformLocation(prog_id, "texSize")
         self._assert_valid_var("texSize", self._tex_size_uniform_loc)
+        printOpenGLError()
+
+        self._eye_pos_uniform_loc = glGetUniformLocation(prog_id, "eyePos")
+        self._assert_valid_var("eyePos", self._eye_pos_uniform_loc)
+        glUniform3f(self._eye_pos_uniform_loc, *self._eye_pos)
         printOpenGLError()
 
         self._model_matrix_uniform_loc = glGetUniformLocation(prog_id, "model")
@@ -611,6 +633,10 @@ class RenderEngine130(RenderEngine):
         self._assert_valid_var("diffuseLightColor", self._diffuse_lighting_color_loc)
         glUniform3f(self._diffuse_lighting_color_loc, *self._diffuse_lighting_color)
 
+        self._specular_lighting_strength_loc = glGetUniformLocation(prog_id, "specularStrength")
+        self._assert_valid_var("specularStrength", self._specular_lighting_strength_loc)
+        glUniform1f(self._specular_lighting_strength_loc, self._specular_lighting_strength)
+
         self._position_attrib_loc = glGetAttribLocation(prog_id, "position")
         self._assert_valid_var("position", self._position_attrib_loc)
 
@@ -642,6 +668,11 @@ class RenderEngine130(RenderEngine):
         glUniformMatrix4fv(self._proj_matrix_uniform_loc, 1, GL_TRUE, self._proj_matrix)
         printOpenGLError()
 
+    def set_eye_pos(self, pos):
+        self._eye_pos = pos if pos is not None else (0, 0, 0)
+        glUniform3f(self._eye_pos_uniform_loc, *self._eye_pos)
+        printOpenGLError()
+
     def set_global_color(self, color):
         self._global_color = color if color is not None else (1., 1., 1.)
         glUniform3f(self._global_color_uniform_loc, *self._global_color)
@@ -661,12 +692,14 @@ class RenderEngine130(RenderEngine):
         glUniform3f(self._ambient_lighting_color_loc, *self._ambient_lighting_color)
         printOpenGLError()
 
-    def set_diffuse_lighting(self, pos, strength=1.0, color=(1., 1., 1.)):
+    def set_diffuse_lighting(self, pos, strength=1.0, specular_strength=0.5, color=(1., 1., 1.)):
         self._diffuse_lighting_position = pos if pos is not None else (0., 0., 0.)
-        self._diffuse_lighting_strength = strength if strength is not None else 1.0
-        self._diffuse_lighting_color = color if color is not None else (1., 1., 1.)
+        self._diffuse_lighting_strength = strength
+        self._specular_lighting_strength = specular_strength
+        self._diffuse_lighting_color = color
         if pos is None:
             self._diffuse_lighting_strength = 0.0
+            self._specular_lighting_strength = 0.0
 
     def resize_internal(self):
         self.set_proj_matrix(numpy.identity(4, dtype=numpy.float32))
