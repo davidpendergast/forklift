@@ -296,7 +296,7 @@ class World:
 
 def build_sample_world():
     w = World()
-    flift = (1, 1), (1, 0)
+    flift = (3, 1), (1, 0)
     holes = {(5, 0), (5, 1), (6, 1), (7, 1), (6, 2), (7, 2), (6, 3), (7, 3)}
     boxes = [(1, 0), (2, 0), (4, 0), (0, 3)]
     planks = [[(0, 0 + i) for i in range(3)],

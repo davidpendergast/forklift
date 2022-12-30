@@ -154,10 +154,11 @@ class ThreeDeeLayer(layers.ImageLayer):
         self.camera = Camera3D()
         self.use_perspective = True  # False for ortho
         self.show_textures = True
-        self.show_wireframe = True
+        self.show_wireframe = False
 
         self.use_lighting = True
         self.ambient_lighting = (0.1, None)
+        self.light_sources = []  # list of (xyz, color, diffuse_strength, specular_strength) for each light source
 
     def set_camera(self, cam):
         self.camera = cam.get_snapshot()
@@ -177,6 +178,18 @@ class ThreeDeeLayer(layers.ImageLayer):
 
     def set_ambient_lighting(self, strength, color):
         self.ambient_lighting = (strength, color)
+
+    def set_light_sources(self, sources):
+        """Sets the light sources for the scene.
+            sources: list of (xyz, color=(1., 1., 1.), diffuse_strength=1.0, specular_strength=0.5)
+        """
+        self.light_sources.clear()
+        for src in sources:
+            xyz = src[0]
+            color = src[1] if len(src) > 1 else (1., 1., 1.)
+            diffuse_strength = src[2] if len(src) > 2 else 1.0
+            specular_strength = src[3] if len(src) > 3 else 0.5
+            self.light_sources.append((xyz, color, diffuse_strength, specular_strength))
 
     def accepts_sprite_type(self, sprite_type):
         return sprite_type == sprites.SpriteTypes.THREE_DEE
@@ -235,9 +248,18 @@ class ThreeDeeLayer(layers.ImageLayer):
             else:
                 engine.set_use_lighting(self.use_lighting)
                 engine.set_ambient_lighting(*self.ambient_lighting)
+
+                if len(self.light_sources) > 0:
+                    # TODO multiple light sources
+                    xyz, color, diff, spec = self.light_sources[0]
+                    engine.set_diffuse_lighting(xyz, strength=diff, specular_strength=spec, color=color)
+                else:
+                    engine.set_diffuse_lighting(None)
         else:
             engine.set_global_color(None)
             engine.set_use_lighting(False)
+            engine.set_ambient_lighting(None)
+            engine.set_diffuse_lighting(None)
             glDisable(GL_DEPTH_TEST)
             glDisable(GL_CULL_FACE)
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL)
@@ -519,6 +541,12 @@ class ThreeDeeModel:
             tex_coords[i] = self.get_texture_coords()[i // 2][i % 2]
         for i in range(0, len(self.get_indices())):
             indices[i] = self.get_indices()[i]
+
+    def __eq__(self, other):
+        return self.get_model_id() == other.get_model_id()
+
+    def __hash__(self):
+        return hash(self.get_model_id())
 
     @staticmethod
     def load_from_disk(model_id, model_path, map_from_texture_to_atlas):

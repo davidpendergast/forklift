@@ -24,16 +24,6 @@ def _build_demo_sprites():
 
     res = []
 
-    for e in w.all_entities():
-        if isinstance(e, world.Forklift):  # need the forklift to be first for lock-on
-            x, z, y = e.xyz
-            flift = threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT, spriteref.LAYER_3D,
-                                      position=(x + 0.5, y / 8 + 0.001, z + 0.5),
-                                      scale=(0.1, 0.1, 0.1),
-                                      rotation=(0, 0, 0))
-            flift.color = lambda: colorutils.rainbow(globaltimer.get_elapsed_time(), 1000, s=0.5)
-            res.append(flift)
-
     sc = 4
     for t_xy in w.terrain:
         x, y = t_xy
@@ -43,6 +33,12 @@ def _build_demo_sprites():
 
     sc = 2
     for e in w.all_entities():
+        if isinstance(e, world.Forklift):  # need the forklift to be first for lock-on
+            x, z, y = e.xyz
+            res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT, spriteref.LAYER_3D,
+                                         position=(x + 0.5, y / 8 + 0.001, z + 0.5),
+                                         scale=(0.1, 0.1, 0.1),
+                                         rotation=(0, 0, 0)))
         if isinstance(e, world.Block):
             bb = e.get_bounding_box()
             res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.CUBE, spriteref.LAYER_3D,
@@ -66,8 +62,46 @@ class Test3DMenu(scenes.Scene):
         self.lock_cam_to_model = False
         self.enable_lighting = True
 
+        self.flift_pos = self.get_forklift().position()
+        self.flift_xz_dir = (0, 1)
+
         self.debug_info = {}
         self.debug_info_sprite = None
+
+    def get_forklift(self) -> threedee.Sprite3D:
+        for spr in self.sprites:
+            if spr.model() == spriteref.ThreeDeeModels.FORKLIFT:
+                return spr
+        return None
+
+    def set_forkflit(self, flift):
+        idx = self.sprites.index(self.get_forklift())
+        if idx >= 0:
+            self.sprites[idx] = flift
+        else:
+            self.sprites.append(flift)
+
+    def update_forklift(self, dt):
+        flift = self.get_forklift()
+        if flift is None:
+            return None
+
+        move_speed = 0.4  # units per sec
+        turn_speed = 45  # deg per sec
+        new_xz_dir = util.rotate(self.flift_xz_dir, dt / 1000 * turn_speed * (math.pi / 180))
+        new_pos = (self.flift_pos[0] + util.set_length(new_xz_dir, dt / 1000 * move_speed)[0],
+                   self.flift_pos[1],
+                   self.flift_pos[2] + util.set_length(new_xz_dir, dt / 1000 * move_speed)[1])
+
+        self.flift_pos = new_pos
+        self.flift_xz_dir = new_xz_dir
+
+        new_flift = flift.update(new_position=self.flift_pos,
+                                 new_rotation=(0, -math.atan2(self.flift_xz_dir[1], self.flift_xz_dir[0]) + math.pi / 2, 0),
+                                 # new_color=colorutils.rainbow(globaltimer.get_elapsed_time(), 3000, s=0.5)
+                                 )
+        self.set_forkflit(new_flift)
+        return new_flift
 
     def all_sprites(self):
         for spr in self.sprites:
@@ -116,12 +150,16 @@ class Test3DMenu(scenes.Scene):
 
         self.camera.update()
 
-        if self.lock_cam_to_model and len(self.sprites) > 0:
-            model_pos = self.sprites[0].position()
-            cam_pos = self.camera.get_position()
-            view_dir = util.set_length(util.sub(model_pos, cam_pos), 1)
-            self.camera.set_direction(view_dir)
+        forklift_spr = self.update_forklift(globaltimer.dt())
+        if forklift_spr is not None:
+            layer3d.set_light_sources([(util.add(forklift_spr.position(), (0, 2, 0)),
+                                        colorutils.lighter(forklift_spr.color(), 0.7))])
 
-        renderengine.get_instance().get_layer(spriteref.LAYER_3D).set_camera(self.camera)
+            if self.lock_cam_to_model:
+                model_pos = forklift_spr.position()
+                cam_pos = self.camera.get_position()
+                view_dir = util.set_length(util.sub(model_pos, cam_pos), 1)
+                self.camera.set_direction(view_dir)
 
+        layer3d.set_camera(self.camera)
         self.update_debug_info_sprite()

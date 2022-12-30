@@ -697,9 +697,16 @@ class RenderEngine130(RenderEngine):
         self._diffuse_lighting_strength = strength
         self._specular_lighting_strength = specular_strength
         self._diffuse_lighting_color = color
+
         if pos is None:
             self._diffuse_lighting_strength = 0.0
             self._specular_lighting_strength = 0.0
+
+        glUniform3f(self._diffuse_lighting_position_loc, *self._diffuse_lighting_position)
+        glUniform1f(self._diffuse_lighting_strength_loc, self._diffuse_lighting_strength)
+        glUniform1f(self._specular_lighting_strength_loc, self._specular_lighting_strength)
+        glUniform3f(self._diffuse_lighting_color_loc, *self._diffuse_lighting_color)
+        printOpenGLError()
 
     def resize_internal(self):
         self.set_proj_matrix(numpy.identity(4, dtype=numpy.float32))
