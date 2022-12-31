@@ -97,9 +97,7 @@ class Test3DMenu(scenes.Scene):
         self.flift_xz_dir = new_xz_dir
 
         new_flift = flift.update(new_position=self.flift_pos,
-                                 new_rotation=(0, -math.atan2(self.flift_xz_dir[1], self.flift_xz_dir[0]) + math.pi / 2, 0),
-                                 # new_color=colorutils.rainbow(globaltimer.get_elapsed_time(), 3000, s=0.5)
-                                 )
+                                 new_rotation=(0, -math.atan2(self.flift_xz_dir[1], self.flift_xz_dir[0]) + math.pi / 2, 0))
         self.set_forkflit(new_flift)
         return new_flift
 
@@ -163,3 +161,58 @@ class Test3DMenu(scenes.Scene):
 
         layer3d.set_camera(self.camera)
         self.update_debug_info_sprite()
+
+
+class InGameScene(scenes.Scene):
+
+    def __init__(self, world_state: world.World):
+        super().__init__()
+        self.world_state = world_state
+        self.renderers = [world.WorldRenderer2D(), world.WorldRenderer3D()]
+        self.active_renderer_idx = 0
+
+    def get_renderer(self) -> world.WorldRenderer:
+        return self.renderers[self.active_renderer_idx]
+
+    def all_sprites(self):
+        for spr in super().all_sprites():
+            yield spr
+        for spr in self.get_renderer().all_sprites():
+            yield spr
+
+    def update(self):
+        if inputs.get_instance().was_pressed(pygame.K_F2):
+            self.active_renderer_idx = (self.active_renderer_idx + 1) % len(self.renderers)
+
+        flift = self.world_state.get_forklift()
+        if flift is not None:
+            dxy = inputs.get_instance().was_pressed_four_way(left=configs.MOVE_LEFT, right=configs.MOVE_RIGHT,
+                                                             negy=configs.MOVE_UP, posy=configs.MOVE_DOWN)
+            if dxy[0] != 0:
+                flift = flift.rotate(dxy[0])
+                self.world_state.add_entity(flift)
+
+            if dxy[1] != 0:
+                xyz = flift.get_xyz()
+                move_dir = util.mult(flift.get_direction(), dxy[1])
+                next_xy = (xyz[0] + move_dir[0], xyz[1] + move_dir[1])
+
+                next_xyz = (*next_xy, 0)
+                for z in range(self.world_state.get_terrain_height(next_xy, or_else=0), 32):
+                    next_xyz = (*next_xy, z)
+                    avail = True
+                    for _ in self.world_state.all_entities_colliding_with(flift, xyz_override=next_xyz):
+                        avail = False
+                        break
+                    if avail:
+                        break
+
+                flift = flift.set_xyz(next_xyz)
+                self.world_state.add_entity(flift)
+
+            df = inputs.get_instance().was_pressed_two_way(negative=configs.CROUCH, positive=configs.JUMP)
+            if df != 0:
+                flift = flift.move_fork(df)
+                self.world_state.add_entity(flift)
+
+        self.renderers[self.active_renderer_idx].update(self.world_state)

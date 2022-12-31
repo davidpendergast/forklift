@@ -618,6 +618,10 @@ def max_component(v_list, i):
     return res
 
 
+def update_bounds(xmin, xmax, val):
+    return min(xmin, val), max(xmax, val)
+
+
 def flatten_list(l):
     return [x for x in _flatten_helper(l)]
 

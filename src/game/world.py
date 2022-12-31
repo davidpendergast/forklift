@@ -1,6 +1,15 @@
+import math
 import typing
 
 import src.utils.util as util
+import src.utils.colorutils as colorutils
+
+import src.engine.sprites as sprites
+import src.engine.threedee as threedee
+import src.engine.spritesheets as spritesheets
+import src.engine.renderengine as renderengine
+
+import src.game.spriteref as spriteref
 
 _ENT_ID = 0
 
@@ -25,6 +34,13 @@ class Entity:
 
     def __hash__(self):
         return hash(self.uid)
+
+    def get_xyz(self):
+        return self.xyz
+
+    def set_xyz(self, xyz) -> 'Entity':
+        self.xyz = xyz
+        return self
 
     def get_cells(self, absolute=True) -> typing.Set[typing.Tuple[int, int, int]]:
         x, y, z = self.xyz if absolute else (0, 0, 0)
@@ -62,20 +78,34 @@ class Entity:
                     int(maxy - miny + 1),
                     int(maxz - minz + 1))
 
-    def get_bounding_box(self, absolute=True):
+    def get_bounding_box(self, absolute=True, axes='xyz'):
         if self._box is None:
             self._normalize()
 
         if absolute:
-            return (self._box[0] + self.xyz[0],
-                    self._box[1] + self.xyz[1],
-                    self._box[2] + self.xyz[2],
-                    self._box[3], self._box[4], self._box[5])
+            res = (self._box[0] + self.xyz[0],
+                   self._box[1] + self.xyz[1],
+                   self._box[2] + self.xyz[2],
+                   self._box[3], self._box[4], self._box[5])
         else:
-            return self._box
+            res = self._box
+
+        if axes == 'xyz':
+            return res
+        else:
+            return tuple(res[(ord(i) - ord('x')) % 3] for i in axes) \
+                   + tuple(res[3 + ((ord(i) - ord('x')) % 3)] for i in axes)
+
+    def get_max(self, absolute=True, axes='xyz'):
+        bb = self.get_bounding_box(absolute=absolute, axes=axes)
+        return tuple(bb[i] + bb[len(bb) // 2 + i] for i in range(len(bb) // 2))
+
+    def get_min(self, absolute=True, axes='xyz'):
+        bb = self.get_bounding_box(absolute=absolute, axes=axes)
+        return tuple(bb[i] for i in range(len(bb) // 2))
 
     def get_debug_color(self):
-        raise (55, 55, 55)
+        return (55, 55, 55)
 
     def copy(self, keep_uid=True) -> 'Entity':
         if type(self) is Entity:
@@ -249,6 +279,9 @@ class Forklift(Entity):
         self.direction = direction
         self.fork_z = 0
 
+    def get_debug_color(self):
+        return (224, 224, 64)
+
     def get_direction(self):
         return self.direction
 
@@ -259,6 +292,10 @@ class Forklift(Entity):
             return (x + dirx, y + diry, z + self.fork_z)
         else:
             return (dirx, diry, self.fork_z)
+
+    def move_fork(self, df):
+        self.fork_z = util.bound(0, 8, self.fork_z + df)
+        return self
 
     def rotate(self, cw_cnt=1, rel_pivot_pt=None) -> 'Forklift':
         super().rotate(cw_cnt=1, rel_pivot_pt=None)
@@ -274,14 +311,21 @@ class World:
         self.terrain = {}
 
     def add_entity(self, ent):
+        if ent is None or not isinstance(ent, Entity):
+            raise TypeError(f"Expected an Entity, instead got: {ent} ({type(ent).__name__})")
         if ent in self.entities:
             self.entities.remove(ent)  # in case we're updating a stale ent
         self.entities.add(ent)
 
-    def all_entities(self, cond=None):
+    def all_entities(self, cond=None) -> typing.Generator[Entity, None, None]:
         for ent in self.entities:
             if cond is None or cond(ent):
                 yield ent
+
+    def get_forklift(self) -> typing.Optional[Forklift]:
+        for ent in self.all_entities(cond=lambda e: isinstance(e, Forklift)):
+            return ent
+        return None
 
     def all_entities_at(self, xyz, cond=None) -> typing.Generator[Entity, None, None]:
         for ent in self.entities:
@@ -292,6 +336,23 @@ class World:
         for ent in self.entities:
             if ent.collides_with_box(box) and (cond is None or cond(ent)):
                 yield ent
+
+    def all_entities_colliding_with(self, ent: Entity, offs=(0, 0, 0), xyz_override=None, cond=None):
+        seen = set()
+        seen.add(ent)  # prevent self-collisions
+        xyz = util.add(ent.get_xyz() if xyz_override is None else xyz_override, offs)
+        for rel_c in ent.get_cells(absolute=False):
+            abs_c = util.add(xyz, rel_c)
+            for other in self.all_entities_at(abs_c, cond=cond):
+                if other not in seen:
+                    yield other
+                seen.add(other)
+
+    def get_terrain_height(self, xy, or_else=-1) -> int:
+        if xy in self.terrain:
+            return self.terrain[xy]
+        else:
+            return or_else
 
 
 def build_sample_world():
@@ -314,6 +375,172 @@ def build_sample_world():
         w.add_entity(Block((0, 0, 0), [(p[0], p[1], 0) for p in plist], color=(164, 153, 131), liftable=True))
 
     return w
+
+
+class WorldRenderer:
+
+    def update(self, world_state: World):
+        raise NotImplementedError()
+
+    def all_sprites(self):
+        raise NotImplementedError()
+
+
+class WorldRenderer2D(WorldRenderer):
+
+    CELL_SIZE = 64
+
+    def __init__(self):
+        super().__init__()
+        self._terrain_sprites = {}  # (x, y) -> AbstractSprite
+        self._entity_sprites = {}  # ent_id -> AbstractSprite
+
+    def update(self, world_state: World):
+        new_terrain_sprites = {}
+        cs = WorldRenderer2D.CELL_SIZE
+        xmin, xmax = float('inf'), -float('inf')
+        ymin, ymax = float('inf'), -float('inf')
+
+        for (x, y) in world_state.terrain.keys():
+            xmin, xmax = util.update_bounds(xmin, xmax, x)
+            ymin, ymax = util.update_bounds(ymin, ymax, y)
+            rect = (x * cs, y * cs, cs, cs)
+            if (x, y) in self._terrain_sprites:
+                spr = self._terrain_sprites[(x, y)]
+            else:
+                spr = sprites.RectangleOutlineSprite(spriteref.LAYER_POLY)
+            height = world_state.get_terrain_height((x, y))
+            color = colorutils.lighter((0.33, 0.33, 0.33), 0.1 * height)
+            spr = spr.update(new_rect=rect, new_color=color,
+                             new_depth=-height, new_outline=cs // 16)
+            new_terrain_sprites[(x, y)] = spr
+        self._terrain_sprites = new_terrain_sprites
+
+        new_entity_sprites = {}
+
+        for ent in world_state.all_entities():
+            color = colorutils.to_float(*ent.get_debug_color())
+            depth = -ent.get_max(axes='z')[0]
+            rect = util.mult(ent.get_bounding_box(axes='xy'), cs)
+            rect = util.rect_expand(rect, all_expand=-cs // 16)
+
+            if ent.uid in self._entity_sprites:
+                spr = self._entity_sprites[ent.uid]
+            else:
+                spr = sprites.ImageSprite.new_sprite(spriteref.LAYER_WORLD_2D)
+
+            spr = spr.update(new_model=spritesheets.get_white_square_img(), new_x=rect[0], new_y=rect[1],
+                             new_raw_size=rect[2:4], new_color=color, new_depth=depth)
+            new_entity_sprites[ent.uid] = spr
+
+            if isinstance(ent, Forklift):
+                fork_id = f"{ent.uid}_fork"
+                if fork_id in self._entity_sprites:
+                    fork_spr = self._entity_sprites[fork_id]
+                else:
+                    fork_spr = sprites.ImageSprite.new_sprite(spriteref.LAYER_WORLD_2D)
+                fork_rect = (ent.get_fork_xyz()[0], ent.get_fork_xyz()[1], 1, 1)
+                fork_rect = util.rect_expand(util.mult(fork_rect, cs), all_expand=-cs // 16)
+                fork_depth = -ent.get_fork_xyz()[2]
+                fork_spr = fork_spr.update(new_model=spritesheets.get_white_square_img(),
+                                           new_x=fork_rect[0], new_y=fork_rect[1],
+                                           new_raw_size=fork_rect[2:4], new_depth=fork_depth,
+                                           new_color=colorutils.darker(color))
+                new_entity_sprites[fork_id] = fork_spr
+
+        self._entity_sprites = new_entity_sprites
+
+        if xmin != float('inf'):
+            world_center = ((xmin + xmax + 1) * cs // 2, (ymin + ymax + 1) * cs // 2)
+        else:
+            world_center = (0, 0)
+
+        for lay in renderengine.get_instance().get_layers(spriteref.world_2d_layer_ids()):
+            screen_size = renderengine.get_instance().get_game_size()
+            offs = (-(screen_size[0] // 2 - world_center[0]), -(screen_size[1] // 2 - world_center[1]))
+            lay.set_offset(*offs)
+
+    def all_sprites(self):
+        for spr in self._terrain_sprites.values():
+            yield spr
+        for spr in self._entity_sprites.values():
+            yield spr
+
+
+class WorldRenderer3D(WorldRenderer):
+
+    def __init__(self):
+        super().__init__()
+        self.lock_camera_to_forklift = False
+        self._sprite_3ds = {}  # uid -> Sprite3D
+        self.camera = threedee.Camera3D(position=(-3.8, 3.2, 2.5), direction=(0.9, -0.4, 0), fov=45)
+
+    def update(self, w: World):
+        new_sprites = {}
+
+        sc = 4
+        for t_xy in w.terrain:
+            x, y = t_xy
+            z = w.terrain[t_xy]
+            t_id = f"terr_{(x, y)}"
+            if t_id not in self._sprite_3ds:
+                spr = threedee.Sprite3D(spriteref.ThreeDeeModels.SQUARE, spriteref.LAYER_3D)
+            else:
+                spr = self._sprite_3ds[t_id]
+
+            color = (0.15, 0.15, 0.15)
+            if (x + y) % 2 == 0:
+                color = colorutils.darker(color)
+
+            spr = spr.update(new_model=spriteref.ThreeDeeModels.SQUARE, new_position=(x, z, y),
+                             new_color=color, new_scale=(sc, sc, sc))
+            new_sprites[t_id] = spr
+
+        forklift_spr = None
+
+        for e in w.all_entities():
+            if isinstance(e, Forklift):  # need the forklift to be first for lock-on
+                x, z, y = e.xyz
+                if e.uid in self._sprite_3ds:
+                    forklift_spr = self._sprite_3ds[e.uid]
+                else:
+                    forklift_spr = threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT, spriteref.LAYER_3D)
+                fdir = e.get_direction()
+                rot = -math.atan2(fdir[1], fdir[0]) + math.pi / 2
+                forklift_spr = forklift_spr.update(new_model=spriteref.ThreeDeeModels.FORKLIFT,
+                                                   new_position=(x + 0.5 + 0.45 * fdir[0], y / 8 + 0.001, z + 0.5 + 0.45 * fdir[1]),
+                                                   new_scale=(0.15, 0.15, 0.15),
+                                                   new_rotation=(0, rot, 0))
+                new_sprites[e.uid] = forklift_spr
+            elif isinstance(e, Block):
+                bb = e.get_bounding_box()
+                if e.uid in self._sprite_3ds:
+                    spr = self._sprite_3ds[e.uid]
+                else:
+                    spr = threedee.Sprite3D(spriteref.ThreeDeeModels.CUBE, spriteref.LAYER_3D)
+                spr = spr.update(new_model=spriteref.ThreeDeeModels.CUBE,
+                                 new_position=(bb[0], bb[2], bb[1]),
+                                 new_scale=(sc * bb[3], sc * bb[5] / 8, sc * bb[4]),
+                                 new_color=(colorutils.to_float(e.get_debug_color())))
+                new_sprites[e.uid] = spr
+
+        self._sprite_3ds = new_sprites
+        for lay in renderengine.get_instance().get_layers(spriteref.world_3d_layer_ids()):
+            lay.set_camera(self.camera)
+
+            if forklift_spr is not None:
+                lay.set_light_sources([(util.add(forklift_spr.position(), (0, 2, 0)),
+                                        colorutils.lighter(forklift_spr.color(), 0.7))])
+
+                if self.lock_camera_to_forklift:
+                    model_pos = forklift_spr.position()
+                    cam_pos = self.camera.get_position()
+                    view_dir = util.set_length(util.sub(model_pos, cam_pos), 1)
+                    self.camera.set_direction(view_dir)
+
+    def all_sprites(self):
+        for spr in self._sprite_3ds.values():
+            yield spr
 
 
 if __name__ == "__main__":

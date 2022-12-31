@@ -9,6 +9,17 @@ import src.engine.spritesheets as spritesheets
 
 LAYER_3D = "threedee"
 LAYER_DEBUG = "debug"
+LAYER_POLY = "poly"
+LAYER_WORLD_2D = "world_2d"
+
+
+def world_2d_layer_ids():
+    return (LAYER_POLY, LAYER_WORLD_2D)
+
+
+def world_3d_layer_ids():
+    return (LAYER_3D,)
+
 
 _3D_TEXTURES = {}  # sheet_id -> TextureSheet
 

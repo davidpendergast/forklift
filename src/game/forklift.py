@@ -8,12 +8,13 @@ import src.engine.scenes as scenes
 import src.engine.sprites as sprites
 import src.engine.layers as layers
 import src.engine.readme_writer as readme_writer
-import src.utils.util as util
 import src.engine.keybinds as keybinds
+import src.utils.util as util
 import configs
 
 import src.game.spriteref as spriteref
 import src.game.menus as menus
+import src.game.world as world
 
 
 class ForkliftGame(game.Game):
@@ -23,6 +24,8 @@ class ForkliftGame(game.Game):
 
     def get_layers(self):
         yield threedee.ThreeDeeLayer(spriteref.LAYER_3D, 1)
+        yield layers.PolygonLayer(spriteref.LAYER_POLY, 500)
+        yield layers.ImageLayer(spriteref.LAYER_WORLD_2D, 750)
         yield layers.ImageLayer(spriteref.LAYER_DEBUG, 1000)
 
     def initialize(self):
@@ -55,7 +58,9 @@ class ForkliftGame(game.Game):
         kb.set_binding(configs.DEBUG_TOGGLE_LIGHTING, keybinds.Binding(pygame.K_l, mods=(pygame.KMOD_NONE)))
 
         globaltimer.set_show_fps(True)
-        scenes.create_instance(menus.Test3DMenu())
+
+        # scenes.create_instance(menus.Test3DMenu())
+        scenes.create_instance(menus.InGameScene(world.build_sample_world()))
 
     def update(self) -> bool:
         scenes.get_instance().update()

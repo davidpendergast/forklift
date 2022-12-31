@@ -36,7 +36,7 @@ class Scene:
         self.get_manager().set_next_scene(next_scene, delay=delay)
 
     def all_sprites(self):
-        raise NotImplementedError()
+        return []
 
     def update_sprites(self):
         """Creates and/or updates the sprites in the scene.
@@ -49,7 +49,7 @@ class Scene:
 
     def update(self):
         """Performs the "logic update" for the scene."""
-        raise NotImplementedError()
+        pass
 
     def became_active(self):
         pass

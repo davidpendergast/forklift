@@ -182,6 +182,9 @@ class RenderEngine:
     def get_layer(self, layer_id):
         return self.layers[layer_id]
 
+    def get_layers(self, layer_ids):
+        return [self.get_layer(layer_id) for layer_id in layer_ids]
+
     def hide_layer(self, layer_id):
         self.hidden_layers[layer_id] = None
 
