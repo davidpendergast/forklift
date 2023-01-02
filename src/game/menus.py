@@ -184,6 +184,10 @@ class InGameScene(scenes.Scene):
         if inputs.get_instance().was_pressed(pygame.K_F2):
             self.active_renderer_idx = (self.active_renderer_idx + 1) % len(self.renderers)
 
+        if inputs.get_instance().was_pressed(configs.RESET):
+            print("INFO: Reset world")
+            self.world_state = world.build_sample_world()
+
         flift = self.world_state.get_forklift()
         if flift is not None:
             dxy = inputs.get_instance().was_pressed_four_way(left=configs.MOVE_LEFT, right=configs.MOVE_RIGHT,
@@ -212,12 +216,9 @@ class InGameScene(scenes.Scene):
                 print(f"INFO: forklift moved to ({flift.get_xyz()})")
 
             df = inputs.get_instance().was_pressed_two_way(negative=configs.CROUCH, positive=configs.JUMP)
-            if df > 0:
-                world.ForkliftActionHandler.raise_fork(flift, self.world_state)
-
             if df != 0:
-                flift = flift.move_fork(df)
-                self.world_state.add_entity(flift)
-
+                mut = world.ForkliftActionHandler.move_fork(flift, df, self.world_state)
+                if mut is not None:
+                    mut.apply(self.world_state)
 
         self.renderers[self.active_renderer_idx].update(self.world_state)

@@ -316,11 +316,11 @@ DIRECTIONS = ((1, 0), (0, 1), (-1, 0), (0, -1))
 
 class Forklift(Entity):
 
-    def __init__(self, xyz, direction=DIRECTIONS[0], uid=None):
+    def __init__(self, xyz, direction=DIRECTIONS[0], fork_z=0, fork_z_bounds=(0, 8), uid=None):
         super().__init__(xyz, [(0, 0, z) for z in range(0, 6)], uid=uid)
         self.direction = direction
-        self.max_fork_z = 8
-        self.fork_z = 0
+        self.fork_z_bounds = fork_z_bounds
+        self.fork_z = util.bound(fork_z, *fork_z_bounds)
 
     def get_debug_color(self):
         return (224, 224, 64)
@@ -336,8 +336,13 @@ class Forklift(Entity):
         else:
             return (dirx, diry, self.fork_z)
 
-    def move_fork(self, df):
-        self.fork_z = util.bound(self.fork_z + df, 0, 8)
+    def move_fork(self, df, safe=True):
+        self.fork_z += df
+        if safe:
+            self.fork_z = util.bound(self.fork_z, *self.fork_z_bounds)
+        if not self.fork_z_bounds[0] <= self.fork_z <= self.fork_z_bounds[1]:
+            raise ValueError(f"fork height is out of range ({self.fork_z} not in {self.fork_z_bounds})")
+
         return self
 
     def rotate(self, cw_cnt=1, rel_pivot_pt=None) -> 'Forklift':
@@ -347,7 +352,10 @@ class Forklift(Entity):
         return self
 
     def copy(self, keep_uid=True) -> 'Forklift':
-        return Forklift(self.get_xyz(), self.get_direction(), uid=self.uid if keep_uid else None)
+        return Forklift(self.get_xyz(), self.get_direction(),
+                        fork_z=self.fork_z,
+                        fork_z_bounds=self.fork_z_bounds,
+                        uid=self.uid if keep_uid else None)
 
 
 class LiftableEntityStack:
@@ -359,6 +367,9 @@ class LiftableEntityStack:
 
     def __contains__(self, item):
         return item in self.entities
+
+    def __iter__(self) -> typing.Iterator[Entity]:
+        return (e for e in self.entities)
 
     def __repr__(self):
         return f"{type(self).__name__}(\n\tentities={self.entities}, \n\tabove={self.above}, \n\tbelow={self.below})"
@@ -413,23 +424,117 @@ class ForkliftActionHandler:
         return res
 
     @staticmethod
-    def raise_fork(forklift: Forklift, world_state: 'World', log=True) -> typing.Optional['WorldMutation']:
-        if forklift.fork_z >= forklift.max_fork_z:
-            if log:
-                print(f"INFO: fork is already at max height ({forklift.fork_z})")
+    def move_fork(forklift: Forklift, steps, world_state: 'World', log=True, all_or_none=True) -> typing.Optional['AbstractWorldMutation']:
+        if steps == 0:
+            return WorldMutation()
+
+        muts = []
+        for _ in range(abs(steps)):
+            if steps > 0:
+                mut = ForkliftActionHandler.raise_fork(forklift, world_state, log=log)
+            else:
+                mut = ForkliftActionHandler.lower_fork(forklift, world_state, log=log)
+
+            if mut is not None:
+                muts.append(mut)
+            elif all_or_none:
+                return None
+            else:
+                break
+
+        if len(muts) == 0:
             return None
         else:
-            stack_on_fork = ForkliftActionHandler.get_stack_above(forklift.get_fork_xyz(), world_state)
-            print(f"INFO: about to lift stack: {stack_on_fork}")
-            # forklift.move_fork(1)
+            return CompositeWorldMutation(muts=muts)
 
     @staticmethod
-    def rotate_forklift(forklift: Forklift, world_state: 'World', dry_run=False, log=True) \
+    def raise_fork(forklift: Forklift, world_state: 'World', log=True) -> typing.Optional['WorldMutation']:
+        if forklift.fork_z >= forklift.fork_z_bounds[1]:
+            if log: print(f"INFO: fork is already at max height ({forklift.fork_z})")
+            return None
+        else:
+            stack_on_fork = ForkliftActionHandler.get_stack_above(forklift.get_fork_xyz(), world_state,
+                                                                  cond=lambda e: e.is_liftable())
+            # check to see if the stack is blocked from above
+            mut = WorldMutation()
+            mut.updates[forklift] = forklift.copy().move_fork(1, safe=False)
+            for stack_ent in stack_on_fork.entities:
+                if stack_ent == forklift:
+                    if log: print("INFO: you can't lift yourself ._.")
+                    return None
+
+                for col_ent in world_state.all_entities_colliding_with(stack_ent, offs=(0, 0, 1),
+                                                                       cond=lambda e: e not in stack_on_fork):
+                    if log: print(f"INFO: stack will collide if lifted ({stack_ent} -> {col_ent})")
+                    return None
+
+                mut.updates[stack_ent] = stack_ent.copy().move((0, 0, 1))
+
+            return mut
+
+    @staticmethod
+    def lower_fork(forklift: Forklift, world_state: 'World', log=True) -> typing.Optional['WorldMutation']:
+        if forklift.fork_z <= forklift.fork_z_bounds[0]:
+            if log: print(f"INFO: fork is already at min height ({forklift.fork_z})")
+            return None
+        else:
+            stack_on_fork = ForkliftActionHandler.get_stack_above(forklift.get_fork_xyz(), world_state,
+                                                                  cond=lambda e: e.is_liftable())
+            # ensure fork can lower
+            for ent in world_state.all_entities_below_fork(forklift.get_fork_xyz()):
+                if ent not in stack_on_fork:
+                    if log: print(f"INFO: fork is blocked by {ent}")
+                    return None
+
+            # find ents in stack that can't be lowered (because they're directly blocked)
+            ents_blocked = set()
+            for stack_ent in stack_on_fork:
+                for cell in stack_ent.get_bottom_cells(add_z=-1):
+                    for _ in world_state.all_entities_at(cell, cond=lambda e: e not in stack_on_fork):
+                        ents_blocked.add(stack_ent)
+                        break
+
+            # find ents that are blocked indirectly
+            q = set()
+            q.update(ents_blocked)
+            while len(q) > 0:
+                stack_ent = q.pop()
+                for ent_above in stack_on_fork.above[stack_ent]:
+                    if ent_above not in ents_blocked:
+                        q.add(ent_above)
+                        ents_blocked.add(ent_above)
+
+            mut = WorldMutation()
+            mut.updates[forklift] = forklift.copy().move_fork(-1, safe=False)
+
+            # finally lower the unblocked ents
+            for stack_ent in stack_on_fork:
+                if stack_ent not in ents_blocked:
+                    mut.updates[stack_ent] = stack_ent.copy().move((0, 0, -1))
+
+            return mut
+
+    @staticmethod
+    def rotate_forklift(forklift: Forklift, cw_steps, world_state: 'World', all_or_none=True, log=True) \
+            -> typing.Optional['WorldMutation']:
+        pass
+
+    @staticmethod
+    def move_forklift(forklift: Forklift, steps, world_state: 'World', all_or_none=True, log=True) \
             -> typing.Optional['WorldMutation']:
         pass
 
 
-class WorldMutation:
+class AbstractWorldMutation:
+
+    def apply(self, world_state: 'World'):
+        raise NotImplementedError()
+
+    def undo(self, world_state: 'World'):
+        raise NotImplementedError()
+
+
+class WorldMutation(AbstractWorldMutation):
 
     def __init__(self):
         self.updates = {}   # old copy of Entity -> new copy of Entity
@@ -451,6 +556,20 @@ class WorldMutation:
             if new_ent is not None:
                 world_state.remove_entity(new_ent)
             world_state.add_entity(old_ent)
+
+
+class CompositeWorldMutation(AbstractWorldMutation):
+
+    def __init__(self, muts=()):
+        self.muts: typing.List[AbstractWorldMutation] = list(muts)
+
+    def apply(self, world_state: 'World'):
+        for m in self.muts:
+            m.apply(world_state)
+
+    def undo(self, world_state: 'World'):
+        for m in reversed(self.muts):
+            m.undo(world_state)
 
 
 class World:

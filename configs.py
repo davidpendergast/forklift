@@ -50,6 +50,7 @@ CROUCH = "crouch"
 
 ENTER = "enter"
 ESCAPE = "escape"
+RESET = "reset"
 
 ROTATE_UP = "rot_up"
 ROTATE_LEFT = "rot_left"

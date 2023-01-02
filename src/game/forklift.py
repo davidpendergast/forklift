@@ -42,6 +42,7 @@ class ForkliftGame(game.Game):
 
         kb.set_binding(configs.ENTER, pygame.K_RETURN)
         kb.set_binding(configs.ESCAPE, pygame.K_ESCAPE)
+        kb.set_binding(configs.RESET, pygame.K_r)
 
         kb.set_binding(configs.ROTATE_UP, pygame.K_UP)
         kb.set_binding(configs.ROTATE_LEFT, pygame.K_LEFT)
