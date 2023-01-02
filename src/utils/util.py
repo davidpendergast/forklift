@@ -21,6 +21,10 @@ def bound(val, lower, upper):
         return val
 
 
+def update_bounds(xmin, xmax, val):
+    return min(xmin, val), max(xmax, val)
+
+
 def signum(val):
     return (val > 0) - (val < 0)
 
@@ -616,10 +620,6 @@ def max_component(v_list, i):
         if i < len(v):
             res = max(v[i], res) if res is not None else v[i]
     return res
-
-
-def update_bounds(xmin, xmax, val):
-    return min(xmin, val), max(xmax, val)
 
 
 def flatten_list(l):

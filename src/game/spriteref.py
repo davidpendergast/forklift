@@ -32,6 +32,7 @@ class TextureSheetTypes:
 
 
 class ThreeDeeModels:
+    FORKLIFT_STATIC = None
     FORKLIFT = None
     SQUARE = None
     CUBE = None
@@ -47,14 +48,26 @@ class ThreeDeeModels:
     @staticmethod
     def load_models_from_disk():
         xform = lambda ident: ThreeDeeModels._get_xform_for_texture(ident)
-        ThreeDeeModels.FORKLIFT = threedee.ThreeDeeModel.load_from_disk("forklift", "assets/models/forklift.obj", xform("forklift_default"))
-        ThreeDeeModels.SQUARE = threedee.ThreeDeeModel.load_from_disk("square", "assets/models/square.obj", xform("white"))
-        ThreeDeeModels.CUBE = threedee.ThreeDeeModel.load_from_disk("cube", "assets/models/cube.obj", xform("white"))
+        s = lambda path: util.resource_path(path)
+
+        ThreeDeeModels.FORKLIFT = threedee.ThreeDeeMultiMesh.load_from_disk("forklift", s("assets/models/forklift/"),
+                                                                            {"body": "body.obj",
+                                                                             "fork": "fork.obj",
+                                                                             "wheels": "wheels.obj"
+                                                                             }, xform("forklift_default"))
+        ThreeDeeModels.FORKLIFT_STATIC = threedee.ThreeDeeMesh.load_from_disk("forklift_static",
+                                                                              s("assets/models/forklift.obj"),
+                                                                              xform("forklift_default"))
+
+        ThreeDeeModels.SQUARE = threedee.ThreeDeeMesh.load_from_disk("square", s("assets/models/square.obj"),
+                                                                     xform("white"))
+        ThreeDeeModels.CUBE = threedee.ThreeDeeMesh.load_from_disk("cube", s("assets/models/cube.obj"),
+                                                                   xform("white"))
 
     @staticmethod
     def from_2d_model(model_2d):
         if model_2d not in ThreeDeeModels._2D_MODEL_CACHE:
-            ThreeDeeModels._2D_MODEL_CACHE[model_2d] = threedee.ThreeDeeModel.build_from_2d_model(model_2d)
+            ThreeDeeModels._2D_MODEL_CACHE[model_2d] = threedee.ThreeDeeMesh.build_from_2d_model(model_2d)
         return ThreeDeeModels._2D_MODEL_CACHE[model_2d]
 
 

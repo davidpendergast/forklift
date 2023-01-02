@@ -294,7 +294,7 @@ class Forklift(Entity):
             return (dirx, diry, self.fork_z)
 
     def move_fork(self, df):
-        self.fork_z = util.bound(0, 8, self.fork_z + df)
+        self.fork_z = util.bound(self.fork_z + df, 0, 8)
         return self
 
     def rotate(self, cw_cnt=1, rel_pivot_pt=None) -> 'Forklift':
@@ -510,7 +510,8 @@ class WorldRenderer3D(WorldRenderer):
                 forklift_spr = forklift_spr.update(new_model=spriteref.ThreeDeeModels.FORKLIFT,
                                                    new_position=(x + 0.5 + 0.45 * fdir[0], y / 8 + 0.001, z + 0.5 + 0.45 * fdir[1]),
                                                    new_scale=(0.15, 0.15, 0.15),
-                                                   new_rotation=(0, rot, 0))
+                                                   new_rotation=(0, rot, 0)
+                                                   ).update_mesh("fork", new_pos=(0, e.get_fork_xyz(absolute=False)[2] / 8, 0))
                 new_sprites[e.uid] = forklift_spr
             elif isinstance(e, Block):
                 bb = e.get_bounding_box()

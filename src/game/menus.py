@@ -35,7 +35,7 @@ def _build_demo_sprites():
     for e in w.all_entities():
         if isinstance(e, world.Forklift):  # need the forklift to be first for lock-on
             x, z, y = e.xyz
-            res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT, spriteref.LAYER_3D,
+            res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT_STATIC, spriteref.LAYER_3D,
                                          position=(x + 0.5, y / 8 + 0.001, z + 0.5),
                                          scale=(0.1, 0.1, 0.1),
                                          rotation=(0, 0, 0)))
@@ -70,7 +70,7 @@ class Test3DMenu(scenes.Scene):
 
     def get_forklift(self) -> threedee.Sprite3D:
         for spr in self.sprites:
-            if spr.model() == spriteref.ThreeDeeModels.FORKLIFT:
+            if spr.model() == spriteref.ThreeDeeModels.FORKLIFT_STATIC:
                 return spr
         return None
 

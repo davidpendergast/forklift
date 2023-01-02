@@ -1,3 +1,6 @@
+import os
+import typing
+
 from OpenGL.GL import *
 
 import numpy
@@ -197,13 +200,14 @@ class ThreeDeeLayer(layers.ImageLayer):
     def populate_data_arrays(self, opaque_ids, translucent_ids, sprite_info_lookup, first_dirty_opaque_idx=0):
         pass  # we don't actually use these
 
-    def get_sprites_grouped_by_model_id(self, engine):
+    def get_sprites_grouped_by_model_id(self, engine) -> typing.Dict[str, typing.List['Sprite3D']]:
         res = {}  # model_id -> list of Sprite3D
         for sprite_id in self.opaque_images:
             spr_3d = engine.sprite_info_lookup[sprite_id].sprite
-            if spr_3d.model().get_model_id() not in res:
-                res[spr_3d.model().get_model_id()] = []
-            res[spr_3d.model().get_model_id()].append(spr_3d)
+            model_id = spr_3d.model().get_model_id()
+            if model_id not in res:
+                res[model_id] = []
+            res[model_id].append(spr_3d)
         return res
 
     def render(self, engine):
@@ -219,17 +223,26 @@ class ThreeDeeLayer(layers.ImageLayer):
         self.set_client_states(True, engine, wireframe=wireframe)
         self._set_uniforms_for_scene(engine)
 
-        model_ids_to_sprites = self.get_sprites_grouped_by_model_id(engine)
-        for model_id in model_ids_to_sprites:
-            # only pass model data (vertices, tex_coords, indices) once per unique model in the scene
-            model = model_ids_to_sprites[model_id][0].model()
-            self._pass_attributes_for_model(engine, model)
+        # collect all meshes in the scene and their parent sprite
+        meshes_to_render: typing.Dict['ThreeDeeMesh', typing.Set[Sprite3D]] = {}  # mesh -> set of Sprite3D
 
-            # draw each sprite with that model, using the same data, but different uniforms
-            for spr_3d in model_ids_to_sprites[model_id]:
-                self._set_uniforms_for_sprite(engine, spr_3d, wireframe=wireframe)
-                indices = self.opaque_data_arrays.indices
-                glDrawElements(GL_TRIANGLES, len(indices), GL_UNSIGNED_INT, indices)
+        for sprite_id in self.opaque_images:
+            spr_3d = engine.sprite_info_lookup[sprite_id].sprite
+            for mesh in spr_3d.model().all_unique_meshes():
+                if mesh not in meshes_to_render:
+                    meshes_to_render[mesh] = set()
+                meshes_to_render[mesh].add(spr_3d)
+
+        for mesh in meshes_to_render:
+            # only pass raw mesh data (vertices, normals, tex_coords, indices)
+            # once per unique mesh in the scene
+            self._pass_attributes_for_mesh(engine, mesh)
+
+            for spr_3d in meshes_to_render[mesh]:
+                for mesh_name in spr_3d.model().all_names_for_mesh(mesh):
+                    spr_3d.set_uniforms_for_mesh(mesh_name, engine, self.camera.get_position(), wireframe=wireframe)
+                    indices = self.opaque_data_arrays.indices
+                    glDrawElements(GL_TRIANGLES, len(indices), GL_UNSIGNED_INT, indices)
 
         self.set_client_states(False, engine, wireframe=wireframe)
 
@@ -295,14 +308,14 @@ class ThreeDeeLayer(layers.ImageLayer):
         engine.set_model_matrix(model)
         engine.set_global_color(spr_3d.color() if not wireframe else (0, 0, 0))
 
-    def _pass_attributes_for_model(self, engine, model_3d):
+    def _pass_attributes_for_mesh(self, engine, mesh_3d):
         oda = self.opaque_data_arrays
-        oda.vertices.resize(3 * len(model_3d.get_vertices()), refcheck=False)
-        oda.normals.resize(3 * len(model_3d.get_normals()), refcheck=False)
-        oda.tex_coords.resize(2 * len(model_3d.get_texture_coords()), refcheck=False)
-        oda.indices.resize(len(model_3d.get_indices()), refcheck=False)
+        oda.vertices.resize(3 * len(mesh_3d.get_vertices()), refcheck=False)
+        oda.normals.resize(3 * len(mesh_3d.get_normals()), refcheck=False)
+        oda.tex_coords.resize(2 * len(mesh_3d.get_texture_coords()), refcheck=False)
+        oda.indices.resize(len(mesh_3d.get_indices()), refcheck=False)
 
-        model_3d.add_urself(oda.vertices, oda.normals, oda.tex_coords, oda.indices)
+        mesh_3d.add_urself(oda.vertices, oda.normals, oda.tex_coords, oda.indices)
 
         engine.set_vertices(oda.vertices)
         engine.set_normals(oda.normals)
@@ -311,7 +324,7 @@ class ThreeDeeLayer(layers.ImageLayer):
 
 class Sprite3D(sprites.AbstractSprite):
 
-    def __init__(self, model, layer_id, position=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1), color=(1, 1, 1), uid=None):
+    def __init__(self, model: 'ThreeDeeModel', layer_id, position=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1), color=(1, 1, 1), mesh_xforms=(), uid=None):
         sprites.AbstractSprite.__init__(self, sprites.SpriteTypes.THREE_DEE, layer_id, uid=uid)
         self._model = model
 
@@ -321,13 +334,13 @@ class Sprite3D(sprites.AbstractSprite):
 
         self._color = color
 
+        self._extra_mesh_xforms = mesh_xforms  # mesh_name -> (pos, scale, rot)
+
     def model(self) -> 'ThreeDeeModel':
         return self._model
 
-    def get_xform(self, camera_pos=(0, 0, 0)):
-        pos = self.position()
-        scale = self.scale()
-
+    @staticmethod
+    def _calc_xform(pos=(0, 0, 0), scale=(1, 1, 1), rot=(0, 0, 0)):
         # translation matrix
         T = numpy.identity(4, dtype=numpy.float32)
         T.itemset((3, 0), pos[0])
@@ -335,7 +348,7 @@ class Sprite3D(sprites.AbstractSprite):
         T.itemset((3, 2), pos[2])
         T = T.transpose()  # this is weird T_T
 
-        R = self.get_rotation_matrix(camera_pos=camera_pos)
+        R = matutils.rotation_matrix(rot, axis_order=(0, 1, 2))
 
         # scale matrix
         S = numpy.identity(4, dtype=numpy.float32)
@@ -344,6 +357,46 @@ class Sprite3D(sprites.AbstractSprite):
         S.itemset((2, 2), scale[2])
 
         return T.dot(R).dot(S)
+
+    def get_xform(self, camera_pos=(0, 0, 0)):
+        pos = self.position()
+        scale = self.scale()
+        rot = self.get_effective_rotation(camera_pos=camera_pos)
+        return Sprite3D._calc_xform(pos, scale, rot)
+
+    def update_mesh(self, name='base', new_pos=None, new_scale=None, new_rot=None) -> 'Sprite3D':
+        pos = (0, 0, 0)
+        scale = (1, 1, 1)
+        rot = (0, 0, 0)
+        if name in self._extra_mesh_xforms:
+            pos, scale, rot = self._extra_mesh_xforms[name]
+
+        did_change = False
+        if new_pos is not None and new_pos != pos:
+            did_change = True
+            pos = new_pos
+        if new_scale is not None and new_scale != scale:
+            did_change = True
+            scale = new_scale
+        if new_rot is not None and new_rot != rot:
+            did_change = True
+            rot = new_rot
+
+        if not did_change:
+            return self
+        else:
+            copy = self.update(force_new=True)
+            mesh_xforms_copy = dict(self._extra_mesh_xforms)
+            mesh_xforms_copy[name] = (pos, scale, rot)
+            copy._extra_mesh_xforms = mesh_xforms_copy
+            return copy
+
+
+    def get_mesh_xform(self, name='base'):
+        if name in self._extra_mesh_xforms:
+            pos, scale, rot = self._extra_mesh_xforms[name]
+            return self._calc_xform(pos, scale, rot)
+        return numpy.identity(4, dtype=numpy.float32)
 
     def position(self):
         return self._position
@@ -360,10 +413,6 @@ class Sprite3D(sprites.AbstractSprite):
     def rotation(self):
         return self._rotation
 
-    def get_rotation_matrix(self, camera_pos=(0, 0, 0)):
-        rot = self.get_effective_rotation(camera_pos=camera_pos)
-        return matutils.rotation_matrix(rot, axis_order=(0, 1, 2))
-
     def get_effective_rotation(self, camera_pos=(0, 0, 0)):
         return self.rotation()
 
@@ -373,11 +422,19 @@ class Sprite3D(sprites.AbstractSprite):
     def color(self):
         return self._color
 
+    def set_uniforms_for_mesh(self, mesh_name, engine, camera_pos, wireframe=False):
+        base_xform = self.model().get_xform(mesh_name)
+        extra_xform = self.get_mesh_xform(name=mesh_name)
+        sprite_xform = self.get_xform(camera_pos=camera_pos)
+
+        engine.set_model_matrix(base_xform @ extra_xform @ sprite_xform)
+        engine.set_global_color(self.color() if not wireframe else (0, 0, 0))
+
     def update(self, new_model=None,
                new_x=None, new_y=None, new_z=None, new_position=None,
                new_xrot=None, new_yrot=None, new_zrot=None, new_rotation=None,
                new_xscale=None, new_yscale=None, new_zscale=None, new_scale=None,
-               new_color=None):
+               new_color=None, force_new=False):
         did_change = False
 
         model = self._model
@@ -437,7 +494,7 @@ class Sprite3D(sprites.AbstractSprite):
             color = new_color
             did_change = True
 
-        if not did_change:
+        if not did_change and not force_new:
             return self
         else:
             return Sprite3D(model, self.layer_id(), position=position, rotation=rotation,
@@ -494,9 +551,99 @@ class BillboardSprite3D(Sprite3D):
             return self
 
 
+IDENTITY = numpy.identity(4)
+
+
 class ThreeDeeModel:
 
-    def __init__(self, model_id, vertices, normals, native_texture_coords, indices, map_from_texture_to_atlas=lambda xy: xy):
+    def __init__(self, model_id):
+        self._model_id = model_id
+
+    def __eq__(self, other):
+        return self.get_model_id() == other.get_model_id()
+
+    def __hash__(self):
+        return hash(self.get_model_id())
+
+    def get_model_id(self):
+        return self._model_id
+
+    def all_mesh_names(self) -> typing.Generator[str, None, None]:
+        raise NotImplementedError()
+
+    def all_names_for_mesh(self, mesh) -> typing.Set['str']:
+        raise NotImplementedError()
+
+    def get_xform(self, name='base') -> numpy.ndarray:
+        return IDENTITY
+
+    def get_mesh(self, name='base') -> 'ThreeDeeMesh':
+        raise NotImplementedError()
+
+    def all_unique_meshes(self) -> typing.Generator['ThreeDeeMesh', None, None]:
+        raise NotImplementedError()
+
+
+class ThreeDeeMultiMesh(ThreeDeeModel):
+
+    def __init__(self, model_id, meshes: typing.Dict[str, typing.Union['ThreeDeeMesh',
+                                                                       typing.Tuple['ThreeDeeMesh', numpy.ndarray]]]):
+        super().__init__(model_id)
+        self._name_to_mesh_and_xform_lookup: typing.Dict[str, typing.Tuple['ThreeDeeMesh', numpy.ndarray]] = {}
+        self._mesh_to_names_lookup: typing.Dict['ThreeDeeMesh', typing.Set[str]] = {}
+
+        # just a little type-checking
+        for mesh_name in meshes:
+            if not isinstance(mesh_name, str):
+                raise TypeError(f"invalid mesh name: {mesh_name} ({type(mesh_name).__name__})")
+
+            val = meshes[mesh_name]
+            if isinstance(val, ThreeDeeMesh):
+                val = (val, IDENTITY)
+
+            if not isinstance(val[0], ThreeDeeMesh) or not isinstance(val[1], numpy.ndarray):
+                raise TypeError(f"invalid mesh value: ({val[0]} ({type(val[0]).__name__}), "
+                                f"{val[1]} ({type(val[1]).__name__})")
+            else:
+                self._name_to_mesh_and_xform_lookup[mesh_name] = val
+
+            if val[0] not in self._mesh_to_names_lookup:
+                self._mesh_to_names_lookup[val[0]] = set()
+            self._mesh_to_names_lookup[val[0]].add(mesh_name)
+
+    def all_mesh_names(self) -> typing.Generator[str, None, None]:
+        for name in self._name_to_mesh_and_xform_lookup:
+            yield name
+
+    def all_names_for_mesh(self, mesh) -> typing.Set['str']:
+        if mesh in self._mesh_to_names_lookup:
+            return self._mesh_to_names_lookup[mesh]
+        return set()
+
+    def get_mesh(self, name="base") -> 'ThreeDeeMesh':
+        return self._name_to_mesh_and_xform_lookup[name][0]
+
+    def get_xform(self, name="base") -> numpy.ndarray:
+        return self._name_to_mesh_and_xform_lookup[name][1]
+
+    def all_unique_meshes(self) -> typing.Generator['ThreeDeeMesh', None, None]:
+        for mesh in self._mesh_to_names_lookup:
+            yield mesh
+
+    @staticmethod
+    def load_from_disk(model_id, path_to_dir, mesh_name_mapping, map_from_texture_to_atlas) -> 'ThreeDeeMultiMesh':
+        meshes = {}
+        for mesh_name in mesh_name_mapping:
+            filename = mesh_name_mapping[mesh_name]
+            mesh_id = filename[:-4] + f"_({model_id})"
+            meshes[mesh_name] = ThreeDeeMesh.load_from_disk(mesh_id, os.path.join(path_to_dir, filename),
+                                                            map_from_texture_to_atlas)
+        return ThreeDeeMultiMesh(model_id, meshes)
+
+
+class ThreeDeeMesh(ThreeDeeModel):
+
+    def __init__(self, mesh_id, vertices, normals, native_texture_coords, indices, map_from_texture_to_atlas=lambda xy: xy):
         """
         :param model_id: str
         :param vertices: list of (x, y, z)
@@ -505,7 +652,8 @@ class ThreeDeeModel:
         :param indices: list of ints, one for each corner of each triangle
         :param map_from_texture_to_atlas: converts points from native_texture_coords to actual atlas coordinates
         """
-        self._model_id = model_id
+        super().__init__(mesh_id + "_(model)")
+        self._mesh_id = mesh_id
 
         self._vertices = vertices
         self._normals = normals
@@ -515,8 +663,8 @@ class ThreeDeeModel:
         self._map_from_texture_to_atlas = map_from_texture_to_atlas
         self._cached_atlas_coords = []  # list of (x, y)
 
-    def get_model_id(self):
-        return self._model_id
+    def get_mesh_id(self):
+        return self._mesh_id
 
     def get_vertices(self):
         return self._vertices
@@ -543,21 +691,35 @@ class ThreeDeeModel:
             indices[i] = self.get_indices()[i]
 
     def __eq__(self, other):
-        return self.get_model_id() == other.get_model_id()
+        return self.get_mesh_id() == other.get_mesh_id()
 
     def __hash__(self):
-        return hash(self.get_model_id())
+        return hash(self.get_mesh_id())
+
+    def all_mesh_names(self) -> typing.Generator[str, None, None]:
+        yield 'base'
+
+    def all_names_for_mesh(self, mesh) -> typing.Set['str']:
+        return {'base'}
+
+    def get_xform(self, name='base') -> numpy.ndarray:
+        return IDENTITY
+
+    def get_mesh(self, name='base') -> 'ThreeDeeMesh':
+        return self
+
+    def all_unique_meshes(self) -> typing.Generator['ThreeDeeMesh', None, None]:
+        yield self
 
     @staticmethod
-    def load_from_disk(model_id, model_path, map_from_texture_to_atlas):
+    def load_from_disk(model_id, mesh_path, map_from_texture_to_atlas):
         try:
             raw_vertices = []
             raw_normals = []
             raw_native_texture_coords = []
             triangle_faces = []
 
-            safe_path = util.resource_path(model_path)
-            with open(safe_path) as f:
+            with open(mesh_path) as f:
                 for line in f:
                     line = line.rstrip()  # remove trailing newlines and whitespace
                     if line.startswith("v "):
@@ -591,7 +753,7 @@ class ThreeDeeModel:
             indices = []
 
             for tri in triangle_faces:
-                for c in tri:  # TODO use the normals
+                for c in tri:
                     v_idx, t_idx, norm_idx = c
                     vertex_xyz = raw_vertices[v_idx]
                     texture_xy = raw_native_texture_coords[t_idx] if t_idx >= 0 else None
@@ -602,20 +764,22 @@ class ThreeDeeModel:
                     native_texture_coords.append(texture_xy)
                     normals.append(norm_xyz)
                     indices.append(index)
-            print("INFO: loaded model ({} faces): {}".format(len(triangle_faces), model_path))
-            return ThreeDeeModel(model_id, vertices, normals, native_texture_coords, indices,
-                                 map_from_texture_to_atlas=map_from_texture_to_atlas)
+            print("INFO: loaded model ({} faces): {}".format(len(triangle_faces), mesh_path))
+            return ThreeDeeMesh(model_id, vertices, normals, native_texture_coords, indices,
+                                map_from_texture_to_atlas=map_from_texture_to_atlas)
         except IOError:
-            print("ERROR: failed to load model: {}".format(model_path))
+            print("ERROR: failed to load model: {}".format(mesh_path))
             return None
 
     @staticmethod
-    def build_from_2d_model(model_2d: sprites.ImageModel) -> 'ThreeDeeModel':
+    def build_from_2d_model(model_2d: sprites.ImageModel) -> 'ThreeDeeMesh':
         vertices = [(-1, -1, 0), (1, 1, 0), (-1, 1, 0), (-1, -1, 0), (1, -1, 0), (1, 1, 0)]
         native_texture_coords = [(model_2d.tx1 if v[0] < 0 else model_2d.tx2,
                                   model_2d.ty1 if v[1] < 0 else model_2d.ty2) for v in vertices]
         normals = [(0, 0, 1)] * 6
         indices = [0, 1, 2, 3, 4, 5]
 
-        return ThreeDeeModel("2d_sprite_" + str(model_2d.uid()), vertices, normals, native_texture_coords, indices)
+        return ThreeDeeMesh("2d_sprite_" + str(model_2d.uid()), vertices, normals, native_texture_coords, indices)
+
+
 
