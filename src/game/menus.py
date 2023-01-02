@@ -209,10 +209,15 @@ class InGameScene(scenes.Scene):
 
                 flift = flift.set_xyz(next_xyz)
                 self.world_state.add_entity(flift)
+                print(f"INFO: forklift moved to ({flift.get_xyz()})")
 
             df = inputs.get_instance().was_pressed_two_way(negative=configs.CROUCH, positive=configs.JUMP)
+            if df > 0:
+                world.ForkliftActionHandler.raise_fork(flift, self.world_state)
+
             if df != 0:
                 flift = flift.move_fork(df)
                 self.world_state.add_entity(flift)
+
 
         self.renderers[self.active_renderer_idx].update(self.world_state)

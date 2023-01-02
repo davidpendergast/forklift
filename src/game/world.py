@@ -46,6 +46,38 @@ class Entity:
         x, y, z = self.xyz if absolute else (0, 0, 0)
         return set((c[0] + x, c[1] + y, c[2] + z) for c in self.cells)
 
+    def get_top_cells(self, add_z=0, absolute=True, include_holes=True):
+        max_z_for_xy = {}
+        top_edge_cells = set()
+        for (x, y, z) in self.get_cells(absolute=absolute):
+            if (x, y) not in max_z_for_xy:
+                max_z_for_xy[(x, y)] = z
+            else:
+                max_z_for_xy[(x, y)] = max(max_z_for_xy[(x, y)], z)
+            if not self.contains_cell((x, y, z+1), absolute=absolute):
+                top_edge_cells.add((x, y, z))
+
+        if include_holes:
+            return set((x, y, z + add_z) for (x, y, z) in top_edge_cells)
+        else:
+            return set((x, y, max_z_for_xy[(x, y)] + add_z) for (x, y) in max_z_for_xy)
+
+    def get_bottom_cells(self, add_z=0, absolute=True, include_holes=True):
+        min_z_for_xy = {}
+        bottom_edge_cells = set()
+        for (x, y, z) in self.get_cells(absolute=absolute):
+            if (x, y) not in min_z_for_xy:
+                min_z_for_xy[(x, y)] = z
+            else:
+                min_z_for_xy[(x, y)] = min(min_z_for_xy[(x, y)], z)
+            if not self.contains_cell((x, y, z - 1), absolute=absolute):
+                bottom_edge_cells.add((x, y, z))
+
+        if include_holes:
+            return set((x, y, z + add_z) for (x, y, z) in bottom_edge_cells)
+        else:
+            return set((x, y, min_z_for_xy[(x, y)] + add_z) for (x, y) in min_z_for_xy)
+
     def get_mass(self) -> float:
         return len(self.cells)
 
@@ -111,13 +143,19 @@ class Entity:
         if type(self) is Entity:
             return Entity(self.xyz, self.cells, uid=self.uid if keep_uid else None)
         else:
-            raise NotImplementedError
+            raise NotImplementedError()
 
     def __contains__(self, xyz):
         xyz_int = (int(xyz[0]) - self.xyz[0],
                    int(xyz[1]) - self.xyz[1],
                    int(xyz[2]) - self.xyz[2])
         return xyz_int in self.cells
+
+    def contains_cell(self, xyz, absolute=True):
+        if absolute:
+            return xyz in self
+        else:
+            return xyz in self.cells
 
     def collides(self, other):
         cells1 = self.get_cells()
@@ -268,6 +306,10 @@ class Block(Entity):
     def get_debug_color(self):
         return self.color
 
+    def copy(self, keep_uid=True) -> 'Block':
+        return Block(self.get_xyz(), self.get_cells(absolute=False), self.color, self.liftable,
+                     uid=self.uid if keep_uid else None)
+
 
 DIRECTIONS = ((1, 0), (0, 1), (-1, 0), (0, -1))
 
@@ -277,6 +319,7 @@ class Forklift(Entity):
     def __init__(self, xyz, direction=DIRECTIONS[0], uid=None):
         super().__init__(xyz, [(0, 0, z) for z in range(0, 6)], uid=uid)
         self.direction = direction
+        self.max_fork_z = 8
         self.fork_z = 0
 
     def get_debug_color(self):
@@ -303,6 +346,112 @@ class Forklift(Entity):
         self.direction = DIRECTIONS[(dir_idx + cw_cnt) % 4]
         return self
 
+    def copy(self, keep_uid=True) -> 'Forklift':
+        return Forklift(self.get_xyz(), self.get_direction(), uid=self.uid if keep_uid else None)
+
+
+class LiftableEntityStack:
+
+    def __init__(self):
+        self.entities = set()
+        self.above = {}  # keys are above values
+        self.below = {}  # keys are below values
+
+    def __contains__(self, item):
+        return item in self.entities
+
+    def __repr__(self):
+        return f"{type(self).__name__}(\n\tentities={self.entities}, \n\tabove={self.above}, \n\tbelow={self.below})"
+
+    def is_balanced(self, support_points):
+        pass
+
+    def add(self, ent) -> bool:
+        if ent in self.entities:
+            return False
+        else:
+            self.entities.add(ent)
+            self.above[ent] = set()
+            self.below[ent] = set()
+            return True
+
+    def set_above(self, ent_above, ent_below) -> bool:
+        did_change = self.add(ent_above)
+        did_change |= self.add(ent_below)
+
+        if ent_below not in self.above[ent_above]:
+            self.above[ent_above].add(ent_below)
+            self.below[ent_below].add(ent_above)
+            did_change = True
+
+        return did_change
+
+
+class ForkliftActionHandler:
+
+    @staticmethod
+    def get_stack_above(xyz, world_state: 'World', cond=None):
+        res = LiftableEntityStack()
+
+        q = set()
+        processed = set()
+
+        # find 'base' entities
+        for ent in world_state.all_entities_at(xyz, cond=cond):
+            q.add(ent)
+            res.add(ent)
+
+        while len(q) > 0:
+            ent = q.pop()
+            processed.add(ent)
+            for cell in ent.get_top_cells(add_z=1):
+                for ent_above in world_state.all_entities_at(cell, cond=cond):
+                    res.set_above(ent_above, ent)
+                    if ent_above not in processed:
+                        q.add(ent_above)
+
+        return res
+
+    @staticmethod
+    def raise_fork(forklift: Forklift, world_state: 'World', log=True) -> typing.Optional['WorldMutation']:
+        if forklift.fork_z >= forklift.max_fork_z:
+            if log:
+                print(f"INFO: fork is already at max height ({forklift.fork_z})")
+            return None
+        else:
+            stack_on_fork = ForkliftActionHandler.get_stack_above(forklift.get_fork_xyz(), world_state)
+            print(f"INFO: about to lift stack: {stack_on_fork}")
+            # forklift.move_fork(1)
+
+    @staticmethod
+    def rotate_forklift(forklift: Forklift, world_state: 'World', dry_run=False, log=True) \
+            -> typing.Optional['WorldMutation']:
+        pass
+
+
+class WorldMutation:
+
+    def __init__(self):
+        self.updates = {}   # old copy of Entity -> new copy of Entity
+        self.additions = {}  # new Entities
+
+    def apply(self, world_state: 'World'):
+        for old_ent in self.updates:
+            new_ent = self.updates[old_ent]
+            world_state.remove_entity(old_ent)
+            if new_ent is not None:
+                world_state.add_entity(new_ent)
+        for ent in self.additions:
+            world_state.add_entity(ent)
+
+    def undo(self, world_state: 'World'):
+        for ent in self.additions:
+            world_state.remove_entity(ent)
+        for (old_ent, new_ent) in self.updates.items():
+            if new_ent is not None:
+                world_state.remove_entity(new_ent)
+            world_state.add_entity(old_ent)
+
 
 class World:
 
@@ -316,6 +465,14 @@ class World:
         if ent in self.entities:
             self.entities.remove(ent)  # in case we're updating a stale ent
         self.entities.add(ent)
+
+    def remove_entity(self, ent):
+        if ent is None or not isinstance(ent, Entity):
+            raise TypeError(f"Expected an Entity, instead got: {ent} ({type(ent).__name__})")
+        if ent not in self.entities:
+            print(f"WARN: Tried to remove a non-existent Entity: {ent}")
+        else:
+            self.entities.remove(ent)
 
     def all_entities(self, cond=None) -> typing.Generator[Entity, None, None]:
         for ent in self.entities:
@@ -337,7 +494,8 @@ class World:
             if ent.collides_with_box(box) and (cond is None or cond(ent)):
                 yield ent
 
-    def all_entities_colliding_with(self, ent: Entity, offs=(0, 0, 0), xyz_override=None, cond=None):
+    def all_entities_colliding_with(self, ent: Entity, offs=(0, 0, 0), xyz_override=None, cond=None) \
+            -> typing.Generator['Entity', None, None]:
         seen = set()
         seen.add(ent)  # prevent self-collisions
         xyz = util.add(ent.get_xyz() if xyz_override is None else xyz_override, offs)
@@ -347,6 +505,22 @@ class World:
                 if other not in seen:
                     yield other
                 seen.add(other)
+
+    def all_entities_on_fork(self, fork_xyz, cond=None) -> typing.Generator['Entity', None, None]:
+        return self.all_entities_at(fork_xyz, cond=cond)
+
+    def all_entities_below_fork(self, fork_xyz, cond=None) -> typing.Generator['Entity', None, None]:
+        below_fork_xyz = util.add(fork_xyz, (0, 0, -1))
+        return self.all_entities_at(below_fork_xyz, cond=cond)
+
+    def all_entities_intersected_by_fork(self, fork_xyz, cond=None) -> typing.Generator['Entity', None, None]:
+        """Entities that are both above and below the specified fork position."""
+        ents_above = set()
+        for ent in self.all_entities_on_fork(fork_xyz, cond=cond):
+            ents_above.add(ent)
+        for ent in self.all_entities_below_fork(fork_xyz, cond=cond):
+            if ent in ents_above:
+                yield ent
 
     def get_terrain_height(self, xy, or_else=-1) -> int:
         if xy in self.terrain:
@@ -362,7 +536,8 @@ def build_sample_world():
     boxes = [(1, 0), (2, 0), (4, 0), (0, 3)]
     planks = [[(0, 0 + i) for i in range(3)],
               [(0 + i, 4) for i in range(3)],
-              [(3 + i, 3) for i in range(5)]]
+              [(3 + i, 3) for i in range(5)],
+              [(0 + i, 0, 8) for i in range(3)]]
     for x in range(0, 8):
         for y in range(0, 5):
             if (x, y) not in holes:
@@ -372,7 +547,8 @@ def build_sample_world():
     for b in boxes:
         w.add_entity(Block((0, 0, 0), [(*b, z) for z in range(0, 8)], color=(110, 112, 92), liftable=True))
     for plist in planks:
-        w.add_entity(Block((0, 0, 0), [(p[0], p[1], 0) for p in plist], color=(164, 153, 131), liftable=True))
+        w.add_entity(Block((0, 0, 0), [(p[0], p[1], (p[2] if len(p) >= 3 else 0)) for p in plist],
+                           color=(164, 153, 131), liftable=True))
 
     return w
 
@@ -492,7 +668,7 @@ class WorldRenderer3D(WorldRenderer):
             if (x + y) % 2 == 0:
                 color = colorutils.darker(color)
 
-            spr = spr.update(new_model=spriteref.ThreeDeeModels.SQUARE, new_position=(x, z, y),
+            spr = spr.update(new_model=spriteref.ThreeDeeModels.SQUARE, new_position=(x, z / 8, y),
                              new_color=color, new_scale=(sc, sc, sc))
             new_sprites[t_id] = spr
 
@@ -520,7 +696,7 @@ class WorldRenderer3D(WorldRenderer):
                 else:
                     spr = threedee.Sprite3D(spriteref.ThreeDeeModels.CUBE, spriteref.LAYER_3D)
                 spr = spr.update(new_model=spriteref.ThreeDeeModels.CUBE,
-                                 new_position=(bb[0], bb[2], bb[1]),
+                                 new_position=(bb[0], bb[2] / 8, bb[1]),
                                  new_scale=(sc * bb[3], sc * bb[5] / 8, sc * bb[4]),
                                  new_color=(colorutils.to_float(e.get_debug_color())))
                 new_sprites[e.uid] = spr
