@@ -197,23 +197,30 @@ class InGameScene(scenes.Scene):
                 self.world_state.add_entity(flift)
 
             if dxy[1] != 0:
-                xyz = flift.get_xyz()
-                move_dir = util.mult(flift.get_direction(), dxy[1])
-                next_xy = (xyz[0] + move_dir[0], xyz[1] + move_dir[1])
+                if True:
+                    mut = world.ForkliftActionHandler.move_forklift(flift, dxy[1] > 0, self.world_state)
+                    if mut is not None:
+                        mut.apply(self.world_state)
+                        flift = self.world_state.get_forklift()
+                else:
+                    # 'fake' movement
+                    xyz = flift.get_xyz()
+                    move_dir = util.mult(flift.get_direction(), dxy[1])
+                    next_xy = (xyz[0] + move_dir[0], xyz[1] + move_dir[1])
 
-                next_xyz = (*next_xy, 0)
-                for z in range(self.world_state.get_terrain_height(next_xy, or_else=0), 32):
-                    next_xyz = (*next_xy, z)
-                    avail = True
-                    for _ in self.world_state.all_entities_colliding_with(flift, xyz_override=next_xyz):
-                        avail = False
-                        break
-                    if avail:
-                        break
+                    next_xyz = (*next_xy, 0)
+                    for z in range(self.world_state.get_terrain_height(next_xy, or_else=0), 32):
+                        next_xyz = (*next_xy, z)
+                        avail = True
+                        for _ in self.world_state.all_entities_colliding_with(flift, xyz_override=next_xyz):
+                            avail = False
+                            break
+                        if avail:
+                            break
 
-                flift = flift.set_xyz(next_xyz)
-                self.world_state.add_entity(flift)
-                print(f"INFO: forklift moved to ({flift.get_xyz()})")
+                    flift = flift.set_xyz(next_xyz)
+                    self.world_state.add_entity(flift)
+                    print(f"INFO: forklift moved to ({flift.get_xyz()})")
 
             df = inputs.get_instance().was_pressed_two_way(negative=configs.CROUCH, positive=configs.JUMP)
             if df != 0:

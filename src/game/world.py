@@ -499,7 +499,7 @@ class ForkliftActionHandler:
             q.update(ents_blocked)
             while len(q) > 0:
                 stack_ent = q.pop()
-                for ent_above in stack_on_fork.above[stack_ent]:
+                for ent_above in stack_on_fork.below[stack_ent]:
                     if ent_above not in ents_blocked:
                         q.add(ent_above)
                         ents_blocked.add(ent_above)
@@ -520,9 +520,107 @@ class ForkliftActionHandler:
         pass
 
     @staticmethod
-    def move_forklift(forklift: Forklift, steps, world_state: 'World', all_or_none=True, log=True) \
+    def is_valid_position_for_forklift(forklift: Forklift, world_state: 'World', stack_on_fork=None, log=True) -> bool:
+        if stack_on_fork is None:
+            stack_on_fork = ()
+
+        cond = lambda e: e not in stack_on_fork and e != forklift
+
+        for ent in world_state.all_entities_colliding_with(forklift, cond=cond):
+            if log: print(f"INFO: forklift is blocked by {ent}")
+            return False
+        for ent in world_state.all_entities_intersected_by_fork(forklift.get_fork_xyz(), cond=cond):
+            if log: print(f"INFO: fork would skewer {ent}")
+            return False
+        if world_state.get_terrain_height(forklift.get_xyz()[:2]) != forklift.get_xyz()[2]:
+            supported = False
+            for _ in world_state.all_entities_at(util.add(forklift.get_xyz(), (0, 0, -1)), cond=cond):
+                supported = True
+                break
+            if not supported:
+                if log: print(f"INFO: no ground for forklift at ({forklift.get_xyz()})")
+                return False
+        return True
+
+    @staticmethod
+    def move_forklift(forklift: Forklift, forward: bool, world_state: 'World', log=True) \
             -> typing.Optional['WorldMutation']:
-        pass
+
+        # TODO should the forklift be able to 'push' stuff?
+        stack_on_fork = ForkliftActionHandler.get_stack_above(forklift.get_fork_xyz(), world_state)
+        move_xyz = (*forklift.get_direction(), 0) if forward else (*util.negate(forklift.get_direction()), 0)
+        new_forklift = forklift.copy().move(move_xyz)
+
+        # ensure the forklift can move there, ignoring stack
+        if not ForkliftActionHandler.is_valid_position_for_forklift(new_forklift, world_state, stack_on_fork=stack_on_fork, log=log):
+            return None
+
+        mut = WorldMutation()
+        mut.updates[forklift] = new_forklift
+
+        blocked_stack_ents = set()
+
+        # ensure stack can be moved
+        for stack_ent in stack_on_fork:
+            for _ in world_state.all_entities_colliding_with(stack_ent, offs=move_xyz,
+                                                             cond=lambda e: e not in stack_on_fork and e != forklift):
+                blocked_stack_ents.add(stack_ent)
+                break
+
+        # entities on top of blocked ents shouldn't move either
+        # TODO this logic should take balance points into account
+        keep_checking = True
+        while keep_checking:
+            keep_checking = False
+            for stack_ent in stack_on_fork:
+                if stack_ent in blocked_stack_ents:
+                    continue
+                else:
+                    for ent_below in stack_on_fork.above[stack_ent]:
+                        if ent_below in blocked_stack_ents:
+                            blocked_stack_ents.add(stack_ent)
+                            keep_checking = True
+                            break
+
+        moved_ents = set()
+        moved_ents.add(mut.updates[forklift])
+
+        # move things that aren't blocked
+        for moved_ent in stack_on_fork:
+            if moved_ent not in blocked_stack_ents:
+                mut.updates[moved_ent] = moved_ent.copy().move(move_xyz)
+                moved_ents.add(mut.updates[moved_ent])
+
+        # ensure things that don't move are supported and won't collide with anything that did move
+        for blocked_ent in blocked_stack_ents:
+            supported = False
+
+            # see if it's supported by or colliding with anything that moved
+            for moved_ent in moved_ents:
+                if blocked_ent.collides(moved_ent):
+                    if log: print(f"INFO: blocked ent {blocked_ent} will collide with moved ent {moved_ent}")
+                    return None
+                if (not supported and not isinstance(moved_ent, Forklift)
+                        and moved_ent.contains_any(blocked_ent.get_bottom_cells(add_z=-1))):
+                    supported = True
+
+            # see if it's supported by anything in the world (including other things that didn't move).
+            if not supported:
+                for cell_below in blocked_ent.get_bottom_cells(add_z=-1):
+                    if world_state.get_terrain_height(cell_below[:2], or_else=-float('inf')) == cell_below[2] + 1:
+                        supported = True
+                        break
+                    for _ in world_state.all_entities_at(cell_below, cond=lambda e: e not in moved_ents):
+                        supported = True
+                        break
+                    if supported:
+                        break
+
+            if not supported:
+                if log: print(f"INFO: blocked ent won't be supported {blocked_ent}.")
+                return None
+
+        return mut
 
 
 class AbstractWorldMutation:
