@@ -202,7 +202,7 @@ class Entity:
         self._box = (0, 0, 0, box[3], box[4], box[5])
         return self
 
-    def rotate(self, cw_cnt=1, rel_pivot_pt=None) -> 'Entity':
+    def rotate(self, cw_cnt=1, rel_pivot_pt=None, abs_pivot_pt=None) -> 'Entity':
         """Rotates the entity in the xy plane.
 
         If none is proved, the center of the entity's bounding box is used as the pivot.
@@ -214,6 +214,11 @@ class Entity:
         |   |   |   |
         *---*---*---*
         """
+        if abs_pivot_pt is not None:
+            if rel_pivot_pt is not None:
+                raise ValueError("Cannot have both a relative and absolute pivot point")
+            rel_pivot_pt = util.sub(abs_pivot_pt[:2], self.xyz[:2])
+
         if rel_pivot_pt is None:
             box = self.get_bounding_box()
             if box[3] % 2 == box[4] % 2:
@@ -238,7 +243,7 @@ class Entity:
                 x, y, z = c[0] + 0.5, c[1] + 0.5, c[2]
                 new_x = rel_pivot_pt[1] - y + rel_pivot_pt[0]
                 new_y = x - rel_pivot_pt[0] + rel_pivot_pt[1]
-                new_cells.add((new_x - 0.5, new_y - 0.5, z))
+                new_cells.add((int(new_x - 0.5), int(new_y - 0.5), z))
             cells = new_cells
 
         self.cells = cells
@@ -345,8 +350,8 @@ class Forklift(Entity):
 
         return self
 
-    def rotate(self, cw_cnt=1, rel_pivot_pt=None) -> 'Forklift':
-        super().rotate(cw_cnt=1, rel_pivot_pt=None)
+    def rotate(self, cw_cnt=1, rel_pivot_pt=None, abs_pivot_pt=None) -> 'Forklift':
+        super().rotate(cw_cnt=1, rel_pivot_pt=rel_pivot_pt, abs_pivot_pt=abs_pivot_pt)
         dir_idx = DIRECTIONS.index(self.get_direction())
         self.direction = DIRECTIONS[(dir_idx + cw_cnt) % 4]
         return self
@@ -515,9 +520,38 @@ class ForkliftActionHandler:
             return mut
 
     @staticmethod
-    def rotate_forklift(forklift: Forklift, cw_steps, world_state: 'World', all_or_none=True, log=True) \
+    def rotate_forklift(forklift: Forklift, cw: bool, world_state: 'World', all_or_none=True, log=True) \
             -> typing.Optional['WorldMutation']:
-        pass
+
+        stack_on_fork = ForkliftActionHandler.get_stack_above(forklift.get_fork_xyz(), world_state)
+
+        cw_cnt = 1 if cw else -1
+        abs_pivot_pt = util.add(forklift.get_xyz()[:2], (0.5, 0.5))
+        new_forklift = forklift.copy().rotate(cw_cnt, abs_pivot_pt=abs_pivot_pt)
+
+        if not ForkliftActionHandler.is_valid_position_for_forklift(new_forklift, world_state,
+                                                                    stack_on_fork=stack_on_fork):
+            return None
+
+        is_stack_supported = False  # TODO allow stack to be partially supported
+        for stack_ent in stack_on_fork:
+            if world_state.is_supported_from_below(stack_ent, cond=lambda e: e not in stack_on_fork):
+                is_stack_supported = True  # stack is supported, so keep it stationary
+                break
+
+        mut = WorldMutation()
+        mut.updates[forklift] = new_forklift
+
+        if not is_stack_supported:
+            # rotate the stack
+            for stack_ent in stack_on_fork:
+                rotated_ent = stack_ent.copy().rotate(cw_cnt, abs_pivot_pt=abs_pivot_pt)
+                for world_ent in world_state.all_entities_colliding_with(rotated_ent, cond=lambda e: e not in stack_on_fork):
+                    if log: print(f"INFO: stack ent will collide if rotated ({stack_ent} -> {world_ent})")
+                    return None
+                mut.updates[stack_ent] = rotated_ent
+
+        return mut
 
     @staticmethod
     def is_valid_position_for_forklift(forklift: Forklift, world_state: 'World', stack_on_fork=None, log=True) -> bool:
@@ -607,7 +641,7 @@ class ForkliftActionHandler:
             # see if it's supported by anything in the world (including other things that didn't move).
             if not supported:
                 for cell_below in blocked_ent.get_bottom_cells(add_z=-1):
-                    if world_state.get_terrain_height(cell_below[:2], or_else=-float('inf')) == cell_below[2] + 1:
+                    if world_state.get_terrain_height(cell_below[:2], or_else=-1000) == cell_below[2] + 1:
                         supported = True
                         break
                     for _ in world_state.all_entities_at(cell_below, cond=lambda e: e not in moved_ents):
@@ -744,6 +778,14 @@ class World:
             return self.terrain[xy]
         else:
             return or_else
+
+    def is_supported_from_below(self, ent: Entity, cond=None):
+        for cell in ent.get_bottom_cells():
+            if self.get_terrain_height(cell[:2], or_else=None) == cell[2]:
+                return True  # supported by terrain
+        for _ in self.all_entities_colliding_with(ent, offs=(0, 0, -1), cond=cond):
+            return True  # supported by another entity
+        return False
 
 
 def build_sample_world():

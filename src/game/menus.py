@@ -188,43 +188,22 @@ class InGameScene(scenes.Scene):
             print("INFO: Reset world")
             self.world_state = world.build_sample_world()
 
-        flift = self.world_state.get_forklift()
-        if flift is not None:
+        if self.world_state.get_forklift() is not None:
             dxy = inputs.get_instance().was_pressed_four_way(left=configs.MOVE_LEFT, right=configs.MOVE_RIGHT,
                                                              negy=configs.MOVE_UP, posy=configs.MOVE_DOWN)
             if dxy[0] != 0:
-                flift = flift.rotate(dxy[0])
-                self.world_state.add_entity(flift)
+                mut = world.ForkliftActionHandler.rotate_forklift(self.world_state.get_forklift(), dxy[0] > 0, self.world_state)
+                if mut is not None:
+                    mut.apply(self.world_state)
 
             if dxy[1] != 0:
-                if True:
-                    mut = world.ForkliftActionHandler.move_forklift(flift, dxy[1] > 0, self.world_state)
-                    if mut is not None:
-                        mut.apply(self.world_state)
-                        flift = self.world_state.get_forklift()
-                else:
-                    # 'fake' movement
-                    xyz = flift.get_xyz()
-                    move_dir = util.mult(flift.get_direction(), dxy[1])
-                    next_xy = (xyz[0] + move_dir[0], xyz[1] + move_dir[1])
-
-                    next_xyz = (*next_xy, 0)
-                    for z in range(self.world_state.get_terrain_height(next_xy, or_else=0), 32):
-                        next_xyz = (*next_xy, z)
-                        avail = True
-                        for _ in self.world_state.all_entities_colliding_with(flift, xyz_override=next_xyz):
-                            avail = False
-                            break
-                        if avail:
-                            break
-
-                    flift = flift.set_xyz(next_xyz)
-                    self.world_state.add_entity(flift)
-                    print(f"INFO: forklift moved to ({flift.get_xyz()})")
+                mut = world.ForkliftActionHandler.move_forklift(self.world_state.get_forklift(), dxy[1] > 0, self.world_state)
+                if mut is not None:
+                    mut.apply(self.world_state)
 
             df = inputs.get_instance().was_pressed_two_way(negative=configs.CROUCH, positive=configs.JUMP)
             if df != 0:
-                mut = world.ForkliftActionHandler.move_fork(flift, df, self.world_state)
+                mut = world.ForkliftActionHandler.move_fork(self.world_state.get_forklift(), df, self.world_state)
                 if mut is not None:
                     mut.apply(self.world_state)
 
