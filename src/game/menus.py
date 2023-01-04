@@ -171,6 +171,11 @@ class InGameScene(scenes.Scene):
         self.renderers = [world.WorldRenderer2D(), world.WorldRenderer3D()]
         self.active_renderer_idx = 0
 
+        self.camera_focus_pt = (0, 0, 0)
+        self.camera_base_offset = (-3.8, 3.2, 2.5)
+        self.camera_theta = 0
+        self.camera_dist = 1
+
     def get_renderer(self) -> world.WorldRenderer:
         return self.renderers[self.active_renderer_idx]
 
@@ -180,9 +185,34 @@ class InGameScene(scenes.Scene):
         for spr in self.get_renderer().all_sprites():
             yield spr
 
+    def _update_3d_camera(self):
+        renderer = self.get_renderer()
+        if isinstance(renderer, world.WorldRenderer3D):
+            dtheta = inputs.get_instance().is_held_two_way(negative=configs.ROTATE_LEFT, positive=configs.ROTATE_RIGHT)
+            self.camera_theta += globaltimer.dt() / 1000 * dtheta * 90 * math.pi / 180
+
+            dzoom = inputs.get_instance().is_held_two_way(negative=configs.ROTATE_UP, positive=configs.ROTATE_DOWN)
+            self.camera_dist = util.bound(self.camera_dist + dzoom * globaltimer.dt() / 1000 * 1, 0.5, 3)
+
+            flift = self.world_state.get_forklift()
+            if flift is not None:
+                fx, fy, fz = flift.get_xyz()
+                self.camera_focus_pt = (fx + 0.5, fz / 8, fy + 0.5)
+
+            base_offset_xz = self.camera_base_offset[0], self.camera_base_offset[2]
+            cur_offset_xz = util.rotate(base_offset_xz, self.camera_theta)
+            offset_xyz = (cur_offset_xz[0], self.camera_base_offset[1], cur_offset_xz[1])
+
+            offset_xyz = util.set_length(offset_xyz, util.mag(self.camera_base_offset) * self.camera_dist)
+
+            renderer.camera.set_position(util.add(self.camera_focus_pt, offset_xyz))
+            renderer.camera.set_direction(util.negate(offset_xyz))
+
     def update(self):
         if inputs.get_instance().was_pressed(pygame.K_F2):
             self.active_renderer_idx = (self.active_renderer_idx + 1) % len(self.renderers)
+
+        self._update_3d_camera()
 
         if inputs.get_instance().was_pressed(configs.RESET):
             print("INFO: Reset world")
