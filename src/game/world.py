@@ -23,9 +23,12 @@ def _next_ent_id():
 
 class Entity:
 
-    def __init__(self, xyz, cells, uid=None):
+    DIRECTIONS = ((1, 0), (0, 1), (-1, 0), (0, -1))
+
+    def __init__(self, xyz, cells, direction=DIRECTIONS[0], uid=None):
         self.uid = uid if uid is not None else _next_ent_id()
         self.xyz = xyz
+        self.direction = direction
         self.cells = set(cells)
         self._box = None
         self._normalize()
@@ -45,6 +48,9 @@ class Entity:
     def set_xyz(self, xyz) -> 'Entity':
         self.xyz = xyz
         return self
+
+    def get_direction(self) -> typing.Tuple[int, int]:
+        return self.direction
 
     def get_cells(self, absolute=True) -> typing.Set[typing.Tuple[int, int, int]]:
         x, y, z = self.xyz if absolute else (0, 0, 0)
@@ -145,7 +151,7 @@ class Entity:
 
     def copy(self, keep_uid=True) -> 'Entity':
         if type(self) is Entity:
-            return Entity(self.xyz, self.cells, uid=self.uid if keep_uid else None)
+            return Entity(self.xyz, self.cells, direction=self.direction, uid=self.uid if keep_uid else None)
         else:
             raise NotImplementedError()
 
@@ -253,6 +259,9 @@ class Entity:
         self.cells = cells
         self._normalize()
 
+        dir_idx = Entity.DIRECTIONS.index(self.get_direction())
+        self.direction = Entity.DIRECTIONS[(dir_idx + cw_cnt) % 4]
+
         return self
 
     def __repr__(self):
@@ -304,8 +313,8 @@ class Entity:
 
 class Block(Entity):
 
-    def __init__(self, xyz, cells, color=(255, 255, 255), liftable=False, uid=None):
-        super().__init__(xyz, cells, uid=uid)
+    def __init__(self, xyz, cells, color=(255, 255, 255), direction=Entity.DIRECTIONS[0], liftable=False, uid=None):
+        super().__init__(xyz, cells, direction=direction, uid=uid)
         self.color = color
         self.liftable = liftable
 
@@ -316,26 +325,22 @@ class Block(Entity):
         return self.color
 
     def copy(self, keep_uid=True) -> 'Block':
-        return Block(self.get_xyz(), self.get_cells(absolute=False), self.color, self.liftable,
+        return Block(self.get_xyz(), self.get_cells(absolute=False),
+                     direction=self.get_direction(),
+                     color=self.color,
+                     liftable=self.liftable,
                      uid=self.uid if keep_uid else None)
-
-
-DIRECTIONS = ((1, 0), (0, 1), (-1, 0), (0, -1))
 
 
 class Forklift(Entity):
 
-    def __init__(self, xyz, direction=DIRECTIONS[0], fork_z=0, fork_z_bounds=(0, 8), uid=None):
-        super().__init__(xyz, [(0, 0, z) for z in range(0, 6)], uid=uid)
-        self.direction = direction
+    def __init__(self, xyz, direction=Entity.DIRECTIONS[0], fork_z=0, fork_z_bounds=(0, 8), uid=None):
+        super().__init__(xyz, [(0, 0, z) for z in range(0, 6)], direction=direction, uid=uid)
         self.fork_z_bounds = fork_z_bounds
         self.fork_z = util.bound(fork_z, *fork_z_bounds)
 
     def get_debug_color(self):
         return (224, 224, 64)
-
-    def get_direction(self):
-        return self.direction
 
     def get_fork_xyz(self, absolute=True):
         x, y, z = self.xyz
@@ -355,13 +360,12 @@ class Forklift(Entity):
         return self
 
     def rotate(self, cw_cnt=1, rel_pivot_pt=None, abs_pivot_pt=None) -> 'Forklift':
-        super().rotate(cw_cnt=1, rel_pivot_pt=rel_pivot_pt, abs_pivot_pt=abs_pivot_pt)
-        dir_idx = DIRECTIONS.index(self.get_direction())
-        self.direction = DIRECTIONS[(dir_idx + cw_cnt) % 4]
+        super().rotate(cw_cnt=cw_cnt, rel_pivot_pt=rel_pivot_pt, abs_pivot_pt=abs_pivot_pt)
         return self
 
     def copy(self, keep_uid=True) -> 'Forklift':
-        return Forklift(self.get_xyz(), self.get_direction(),
+        return Forklift(self.get_xyz(),
+                        direction=self.get_direction(),
                         fork_z=self.fork_z,
                         fork_z_bounds=self.fork_z_bounds,
                         uid=self.uid if keep_uid else None)

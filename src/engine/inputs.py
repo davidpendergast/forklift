@@ -230,6 +230,16 @@ class InputState:
             cur_pos = self._mouse_pos
             if last_pos is not None and cur_pos is not None and last_pos != cur_pos:
                 return (last_pos, cur_pos)
+        return None
+
+    def mouse_drag_delta_this_frame(self, button=1):
+        """returns: (deltax, deltay) or None if not dragging or there was no movement."""
+        start_end_xys = self.mouse_drag_this_frame(button=button)
+        if start_end_xys is None:
+            return None
+        else:
+            return (start_end_xys[1][0] - start_end_xys[0][0],
+                    start_end_xys[1][1] - start_end_xys[0][1])
 
     def mouse_is_dragging(self, button=1):
         return self.mouse_drag_total(button=button) is not None

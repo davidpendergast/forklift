@@ -185,14 +185,24 @@ class InGameScene(scenes.Scene):
         for spr in self.get_renderer().all_sprites():
             yield spr
 
-    def _update_3d_camera(self):
+    def _handle_3d_inputs(self):
         renderer = self.get_renderer()
         if isinstance(renderer, world.WorldRenderer3D):
-            dtheta = inputs.get_instance().is_held_two_way(negative=configs.ROTATE_LEFT, positive=configs.ROTATE_RIGHT)
-            self.camera_theta += globaltimer.dt() / 1000 * dtheta * 90 * math.pi / 180
+            screen_size = renderengine.get_instance().get_game_size()
+            yfov = renderer.camera.get_fov()
+            xfov = yfov * screen_size[0] / max(screen_size[1], 1)
 
-            dzoom = inputs.get_instance().is_held_two_way(negative=configs.ROTATE_UP, positive=configs.ROTATE_DOWN)
-            self.camera_dist = util.bound(self.camera_dist + dzoom * globaltimer.dt() / 1000 * 1, 0.5, 3)
+            drag_xy = inputs.get_instance().mouse_drag_delta_this_frame(button=1) or (0, 0)
+
+            rot_keyinput = inputs.get_instance().is_held_two_way(negative=configs.ROTATE_LEFT, positive=configs.ROTATE_RIGHT)
+            dtheta_keys = globaltimer.dt() / 1000 * rot_keyinput * 90 * math.pi / 180
+            dtheta_mouse = (drag_xy[0] / screen_size[0]) * xfov * math.pi / 180 * configs.mouse_camera_sensitivity_x
+            self.camera_theta += dtheta_keys + dtheta_mouse
+
+            zoom_keyinput = inputs.get_instance().is_held_two_way(negative=configs.ROTATE_UP, positive=configs.ROTATE_DOWN)
+            dzoom_keys = zoom_keyinput * globaltimer.dt() / 1000 * 1
+            dzoom_mouse = (drag_xy[1] / screen_size[1]) * yfov * math.pi / 180 * configs.mouse_camera_sensitivity_y
+            self.camera_dist = util.bound(self.camera_dist + dzoom_keys + dzoom_mouse, 0.5, 3)
 
             flift_spr = renderer.get_sprite_for_ent(self.world_state.get_forklift())
             if flift_spr is not None:
@@ -207,6 +217,17 @@ class InGameScene(scenes.Scene):
             renderer.camera.set_position(util.add(self.camera_focus_pt, offset_xyz))
             renderer.camera.set_direction(util.negate(offset_xyz))
             renderer.update_camera()
+
+            for lay_id in spriteref.world_3d_layer_ids():
+                layer3d = renderengine.get_instance().get_layer(lay_id)
+                if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_ORTHO_CAMERA):
+                    layer3d.set_use_perspective(not layer3d.use_perspective)
+                if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_TEXTURES):
+                    layer3d.set_show_textures(not layer3d.show_textures)
+                if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_WIREFRAME):
+                    layer3d.set_show_wireframe(not layer3d.show_wireframe)
+                if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_LIGHTING):
+                    layer3d.set_use_lighting(not layer3d.use_lighting)
 
     def update(self):
         if inputs.get_instance().was_pressed(pygame.K_F2):
@@ -239,4 +260,4 @@ class InGameScene(scenes.Scene):
             self.get_renderer().register_mutation(total_mut, configs.action_speed_ms, clear_old=True)
 
         self.renderers[self.active_renderer_idx].update(self.world_state)
-        self._update_3d_camera()
+        self._handle_3d_inputs()

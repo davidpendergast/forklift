@@ -18,6 +18,9 @@ allow_window_resize = True
 
 clear_color = (0.666, 0.666, 0.666)
 
+mouse_camera_sensitivity_x = 3
+mouse_camera_sensitivity_y = 3
+
 
 """ Pixel Scaling """
 optimal_window_size = (640, 480)
