@@ -506,11 +506,11 @@ def rejection(v1, v2):
         return sub(v1, proj_v1_onto_v2)
 
 
-def linear_interp(v1, v2, a):
+def linear_interp(v1, v2, a, loop=None):
     if isinstance(v1, int) or isinstance(v1, float):
-        return _lerp_num_safely(v1, v2, a)
+        return _lerp_num_safely(v1, v2, a, loop=loop)
     else:
-        return tuple([_lerp_num_safely(v1[i], v2[i], a) for i in range(0, len(v1))])
+        return tuple([_lerp_num_safely(v1[i], v2[i], a, loop=loop) for i in range(0, len(v1))])
 
 
 def linear_interp_list(v_list, a, wrap=True):
@@ -530,11 +530,24 @@ def linear_interp_list(v_list, a, wrap=True):
         return linear_interp(v_list[idx1], v_list[idx2], a * n - idx1)
 
 
-def _lerp_num_safely(n1, n2, a, tolerance=0.00001):
+def _lerp_num_safely(n1, n2, a, tolerance=0.00001, loop=None):
+    if loop is not None:
+        n1 %= loop
+        n2 %= loop
+        if abs((n2 + loop) - n1) < abs(n2 - n1):
+            n2 += loop
+        elif abs((n2 - loop) - n1) < abs(n2 - n1):
+            n2 -= loop
+
     if abs(n1 - n2) < tolerance:
-        return (n1 + n2) / 2
+        res = (n1 + n2) / 2
     else:
-        return n1 * (1 - a) + n2 * a
+        res = n1 * (1 - a) + n2 * a
+
+    if loop is not None:
+        res %= loop
+
+    return res
 
 
 def smooth_interp(v1, v2, a):

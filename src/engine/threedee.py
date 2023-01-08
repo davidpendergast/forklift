@@ -503,11 +503,10 @@ class Sprite3D(sprites.AbstractSprite):
             return Sprite3D(model, self.layer_id(), position=position, rotation=rotation,
                             scale=scale, color=color, uid=self.uid())
 
-    def interpolate(self, other: 'Sprite3D', t, force_new=False, func=None) -> 'Sprite3D':
-        if func is None:
-            func = util.linear_interp
+    def interpolate(self, other: 'Sprite3D', t, force_new=False) -> 'Sprite3D':
+        func = util.linear_interp
         res = self.update(new_position=func(self.position(), other.position(), t),
-                          new_rotation=func(self.rotation(), other.rotation(), t),
+                          new_rotation=func(self.rotation(), other.rotation(), t, loop=2*math.pi),
                           new_scale=func(self.scale(), other.scale(), t),
                           new_color=func(self.color(), other.color(), util.bound(t, 0., 1.)),
                           force_new=force_new)
@@ -516,9 +515,11 @@ class Sprite3D(sprites.AbstractSprite):
         my_mesh_xforms = self.get_extra_mesh_xforms()
         ot_mesh_xforms = other.get_extra_mesh_xforms()
         for name in (my_mesh_xforms.keys() | ot_mesh_xforms.keys()):
-            my_trans_rot_scale = my_mesh_xforms[name] if name in my_mesh_xforms else ((0, 0, 0), (1, 1, 1), (0, 0, 0))
-            ot_trans_rot_scale = ot_mesh_xforms[name] if name in ot_mesh_xforms else ((0, 0, 0), (1, 1, 1), (0, 0, 0))
-            interp_mesh_xforms[name] = tuple(func(my_x, ot_x, t) for (my_x, ot_x) in zip(my_trans_rot_scale, ot_trans_rot_scale))
+            my_trans, my_rot, my_scale = my_mesh_xforms[name] if name in my_mesh_xforms else ((0, 0, 0), (1, 1, 1), (0, 0, 0))
+            ot_trans, ot_rot, ot_scale = ot_mesh_xforms[name] if name in ot_mesh_xforms else ((0, 0, 0), (1, 1, 1), (0, 0, 0))
+            interp_mesh_xforms[name] = (func(my_trans, ot_trans, t),
+                                        func(my_rot, ot_rot, t, loop=2*math.pi),
+                                        func(my_scale, ot_scale, t))
         res._extra_mesh_xforms = interp_mesh_xforms
 
         return res
