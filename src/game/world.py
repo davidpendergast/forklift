@@ -672,14 +672,15 @@ class AbstractWorldMutation:
     def undo(self, world_state: 'World'):
         raise NotImplementedError()
 
-    def get_entity_mutation(self, ent_id: int, prog: float) -> typing.List[typing.Tuple[Entity, float]]:
+    def get_entity_change(self, ent: typing.Union[int, Entity]) \
+            -> typing.Tuple[typing.Optional[Entity], typing.Optional[Entity]]:
         raise NotImplementedError()
 
 
 class WorldMutation(AbstractWorldMutation):
 
     def __init__(self):
-        self.updates = {}    # ent_id -> (old copy of Entity, new copy of Entity)
+        self.updates = {}  # ent_id -> (old copy of Entity, new copy of Entity)
 
     def is_empty(self):
         return len(self.updates) == 0
@@ -712,22 +713,19 @@ class WorldMutation(AbstractWorldMutation):
             if old_ent is not None:
                 world_state.add_entity(old_ent)
 
-    def get_entity_mutation(self, ent_id: int, prog: float):
+    def get_entity_change(self, ent: typing.Union[int, Entity]) \
+            -> typing.Tuple[typing.Optional[Entity], typing.Optional[Entity]]:
+        ent_id = ent if isinstance(ent, int) else ent.uid
         if ent_id in self.updates:
-            old_ent, new_ent = self.updates[ent_id]
-            if prog <= 0:
-                return [(old_ent, 1)]
-            elif prog >= 1:
-                return [(new_ent, 1)]
-            else:
-                return [(old_ent, prog), (new_ent, 1 - prog)]
+            return self.updates[ent_id]
         else:
-            return []
+            return None, None
 
 
 class CompositeWorldMutation(AbstractWorldMutation):
 
     def __init__(self, muts=()):
+        # TODO should just merge these immediately
         self.muts: typing.List[AbstractWorldMutation] = list(muts)
 
     def is_empty(self):
@@ -748,14 +746,16 @@ class CompositeWorldMutation(AbstractWorldMutation):
         for m in reversed(self.muts):
             m.undo(world_state)
 
-    def get_entity_mutation(self, ent_id: int, prog: float) -> typing.List[typing.Tuple[Entity, float]]:
-        res = []
+    def get_entity_change(self, ent: typing.Union[int, Entity]) \
+            -> typing.Tuple[typing.Optional[Entity], typing.Optional[Entity]]:
+        old_ent, new_ent = None, None
         for mut in self.muts:
-            # TODO this is a bit questionable if multiple conflicting mutations
-            #  have occurred to the same entity (e.g. moving & adding).
-            #  So hopefully that hasn't happened.
-            res.extend(mut.get_entity_mutation(ent_id, prog))
-        return res
+            old_new = mut.get_entity_change(ent)
+            if old_ent is None and old_new[0] is not None:
+                old_ent = old_new[0]
+            if old_new[1] is not None:
+                new_ent = old_new[1]
+        return old_ent, new_ent
 
 
 class World:
@@ -870,7 +870,7 @@ class WorldRenderer:
 
     def __init__(self):
         self.cur_time = 0
-        self.muts = []  # list of (start_time, end_time, WorldMutation)
+        self.muts = []  # list of (start_time, end_time, reg_time, WorldMutation)
 
     def register_mutation(self, mut: AbstractWorldMutation, duration_ms: float, start_delay=0, clear_old=True):
         if clear_old:
@@ -879,7 +879,7 @@ class WorldRenderer:
             start_time = self.cur_time + start_delay
             end_time = start_time + duration_ms
             if self.cur_time < end_time and start_time < end_time:
-                self.muts.append((start_time, end_time, mut))
+                self.muts.append((start_time, end_time, self.cur_time, mut))
 
     def update_muts(self):
         if len(self.muts) > 0:
@@ -888,17 +888,23 @@ class WorldRenderer:
     def all_active_muts(self) -> typing.Generator[typing.Tuple[AbstractWorldMutation, float], None, None]:
         for m in self.muts:
             if m[0] <= self.cur_time <= m[1]:
-                yield m[2], 1 - (self.cur_time - m[0]) / (m[1] - m[0])
+                yield m[3], (self.cur_time - m[0]) / (m[1] - m[0])
 
-    def get_mutated_entity_list(self, ent: Entity) -> typing.List[typing.Tuple[Entity, float]]:
-        res = []
-        for mut, prog in self.all_active_muts():
-            entity_list = mut.get_entity_mutation(ent.uid, prog)
-            res.extend(entity_list)
-        if len(res) == 0:
-            return [(ent, 1)]
+    def get_active_mut(self) -> typing.Tuple[AbstractWorldMutation, float]:
+        for mut, prog in reversed(list(self.all_active_muts())):
+            return mut, prog  # TODO need to merge & combine overlapping muts
+        return None, None
+
+    def get_cur_entity(self, ent: Entity) -> typing.Tuple[Entity, Entity, float]:
+        mut, prog = self.get_active_mut()
+        if mut is None:
+            return ent, ent, 0
         else:
-            return res
+            old_ent, new_ent = mut.get_entity_change(ent)
+            if old_ent is None and new_ent is None:
+                return ent, ent, 0
+            else:
+                return old_ent, new_ent, prog
 
     def update(self, world_state: World):
         self.cur_time += globaltimer.dt()
@@ -997,6 +1003,37 @@ class WorldRenderer3D(WorldRenderer):
         self._sprite_3ds = {}  # uid -> Sprite3D
         self.camera = threedee.Camera3D(position=(-3.8, 3.2, 2.5), direction=(0.9, -0.4, 0), fov=45)
 
+    def _get_sprite_for(self, e: Entity, spr_id):
+        x, z, y = e.get_xyz()  # 3d coordinates, z and y are swapped intentionally
+        if isinstance(e, Forklift):
+            if spr_id in self._sprite_3ds:
+                forklift_spr = self._sprite_3ds[spr_id]
+            else:
+                forklift_spr = threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT, spriteref.LAYER_3D)
+
+            fdir = e.get_direction()
+            rot = -math.atan2(fdir[1], fdir[0]) + math.pi / 2
+
+            forklift_spr = forklift_spr.update(new_model=spriteref.ThreeDeeModels.FORKLIFT,
+                                               new_position=(x + 0.5, y / 8 + 0.001, z + 0.5),
+                                               new_rotation=(0, rot, 0)
+                                               ).update_mesh("fork",
+                                                             new_pos=(0, e.get_fork_xyz(absolute=False)[2] / 8, 0))
+            return forklift_spr
+        elif isinstance(e, Block):
+            bb = e.get_bounding_box()
+            if spr_id in self._sprite_3ds:
+                spr = self._sprite_3ds[spr_id]
+            else:
+                spr = threedee.Sprite3D(spriteref.ThreeDeeModels.CUBE, spriteref.LAYER_3D)
+            spr = spr.update(new_model=spriteref.ThreeDeeModels.CUBE,
+                             new_position=(bb[0], bb[2] / 8, bb[1]),
+                             new_scale=(4 * bb[3], 4 * bb[5] / 8, 4 * bb[4]),
+                             new_color=(colorutils.to_float(e.get_debug_color())))
+            return spr
+        else:
+            return None
+
     def update(self, w: World):
         super().update(w)
         new_sprites = {}
@@ -1022,38 +1059,24 @@ class WorldRenderer3D(WorldRenderer):
         forklift_spr = None
 
         for e in w.all_entities():
-            e_list = self.get_mutated_entity_list(e)
-            e_list = [_e for _e in e_list if _e[0] is not None]  # TODO deal with additions / deletions
+            old_ent, new_ent, t = self.get_cur_entity(e)
+            if (old_ent is new_ent) or t == 0:
+                # not interpolating
+                spr = self._get_sprite_for(old_ent, old_ent.uid)
+                new_sprites[old_ent.uid] = spr
+            else:
+                old_spr_id = (old_ent.uid, 0)
+                new_spr_id = (new_ent.uid, 1)
+                old_spr = self._get_sprite_for(old_ent, old_spr_id)
+                new_spr = self._get_sprite_for(new_ent, new_spr_id)
 
-            x, z, y = util.weighted_average([_ew[0].xyz for _ew in e_list],
-                                            [_ew[1] for _ew in e_list])
+                spr = old_spr.interpolate(new_spr, t)
 
-            if isinstance(e, Forklift):
-                if e.uid in self._sprite_3ds:
-                    forklift_spr = self._sprite_3ds[e.uid]
-                else:
-                    forklift_spr = threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT, spriteref.LAYER_3D)
-
-                fdir = e.get_direction()
-                rot = -math.atan2(fdir[1], fdir[0]) + math.pi / 2
-
-                forklift_spr = forklift_spr.update(new_model=spriteref.ThreeDeeModels.FORKLIFT,
-                                                   new_position=(x + 0.5, y / 8 + 0.001, z + 0.5),
-                                                   new_rotation=(0, rot, 0)
-                                                   ).update_mesh("fork",
-                                                                 new_pos=(0, e.get_fork_xyz(absolute=False)[2] / 8, 0))
-                new_sprites[e.uid] = forklift_spr
-            elif isinstance(e, Block):
-                bb = e.get_bounding_box()
-                if e.uid in self._sprite_3ds:
-                    spr = self._sprite_3ds[e.uid]
-                else:
-                    spr = threedee.Sprite3D(spriteref.ThreeDeeModels.CUBE, spriteref.LAYER_3D)
-                spr = spr.update(new_model=spriteref.ThreeDeeModels.CUBE,
-                                 new_position=(bb[0], bb[2] / 8, bb[1]),
-                                 new_scale=(sc * bb[3], sc * bb[5] / 8, sc * bb[4]),
-                                 new_color=(colorutils.to_float(e.get_debug_color())))
+                new_sprites[old_spr_id] = old_spr
+                new_sprites[new_spr_id] = new_spr
                 new_sprites[e.uid] = spr
+            if isinstance(e, Forklift):
+                forklift_spr = spr
 
         self._sprite_3ds = new_sprites
         for lay in renderengine.get_instance().get_layers(spriteref.world_3d_layer_ids()):
@@ -1078,8 +1101,9 @@ class WorldRenderer3D(WorldRenderer):
         return None
 
     def all_sprites(self):
-        for spr in self._sprite_3ds.values():
-            yield spr
+        for key in self._sprite_3ds:
+            if not isinstance(key, tuple):  # tuples are the before & after sprites
+                yield self._sprite_3ds[key]
 
 
 if __name__ == "__main__":

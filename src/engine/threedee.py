@@ -324,7 +324,8 @@ class ThreeDeeLayer(layers.ImageLayer):
 
 class Sprite3D(sprites.AbstractSprite):
 
-    def __init__(self, model: 'ThreeDeeModel', layer_id, position=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1), color=(1, 1, 1), mesh_xforms=(), uid=None):
+    def __init__(self, model: 'ThreeDeeModel', layer_id, position=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1),
+                 color=(1, 1, 1), mesh_xforms=None, uid=None):
         sprites.AbstractSprite.__init__(self, sprites.SpriteTypes.THREE_DEE, layer_id, uid=uid)
         self._model = model
 
@@ -334,7 +335,7 @@ class Sprite3D(sprites.AbstractSprite):
 
         self._color = color
 
-        self._extra_mesh_xforms = mesh_xforms  # mesh_name -> (pos, scale, rot)
+        self._extra_mesh_xforms = {} if mesh_xforms is None else mesh_xforms  # mesh_name -> (pos, scale, rot)
 
     def model(self) -> 'ThreeDeeModel':
         return self._model
@@ -396,6 +397,9 @@ class Sprite3D(sprites.AbstractSprite):
             pos, scale, rot = self._extra_mesh_xforms[name]
             return self._calc_xform(pos, scale, rot)
         return numpy.identity(4, dtype=numpy.float32)
+
+    def get_extra_mesh_xforms(self):
+        return self._extra_mesh_xforms
 
     def position(self):
         return self._position
@@ -498,6 +502,26 @@ class Sprite3D(sprites.AbstractSprite):
         else:
             return Sprite3D(model, self.layer_id(), position=position, rotation=rotation,
                             scale=scale, color=color, uid=self.uid())
+
+    def interpolate(self, other: 'Sprite3D', t, force_new=False, func=None) -> 'Sprite3D':
+        if func is None:
+            func = util.linear_interp
+        res = self.update(new_position=func(self.position(), other.position(), t),
+                          new_rotation=func(self.rotation(), other.rotation(), t),
+                          new_scale=func(self.scale(), other.scale(), t),
+                          new_color=func(self.color(), other.color(), util.bound(t, 0., 1.)),
+                          force_new=force_new)
+
+        interp_mesh_xforms = {}
+        my_mesh_xforms = self.get_extra_mesh_xforms()
+        ot_mesh_xforms = other.get_extra_mesh_xforms()
+        for name in (my_mesh_xforms.keys() | ot_mesh_xforms.keys()):
+            my_trans_rot_scale = my_mesh_xforms[name] if name in my_mesh_xforms else ((0, 0, 0), (1, 1, 1), (0, 0, 0))
+            ot_trans_rot_scale = ot_mesh_xforms[name] if name in ot_mesh_xforms else ((0, 0, 0), (1, 1, 1), (0, 0, 0))
+            interp_mesh_xforms[name] = tuple(func(my_x, ot_x, t) for (my_x, ot_x) in zip(my_trans_rot_scale, ot_trans_rot_scale))
+        res._extra_mesh_xforms = interp_mesh_xforms
+
+        return res
 
 
 class BillboardSprite3D(Sprite3D):

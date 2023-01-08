@@ -200,6 +200,8 @@ class _GameLoop:
             target_fps = configs.target_fps if not slo_mo_mode else configs.target_fps // 4
 
             dt = self._wait_until_next_frame(target_fps)
+            if slo_mo_mode:
+                dt /= 4
 
             globaltimer.set_dt(dt, target_dt=1000 / target_fps)
             globaltimer.inc_tick_count()
