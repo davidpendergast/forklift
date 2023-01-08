@@ -24,7 +24,7 @@ def _build_demo_sprites():
 
     res = []
 
-    sc = 4
+    sc = 4 / 0.15
     for t_xy in w.terrain:
         x, y = t_xy
         z = w.terrain[t_xy]

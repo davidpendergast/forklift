@@ -391,7 +391,6 @@ class Sprite3D(sprites.AbstractSprite):
             copy._extra_mesh_xforms = mesh_xforms_copy
             return copy
 
-
     def get_mesh_xform(self, name='base'):
         if name in self._extra_mesh_xforms:
             pos, scale, rot = self._extra_mesh_xforms[name]
@@ -427,7 +426,7 @@ class Sprite3D(sprites.AbstractSprite):
         extra_xform = self.get_mesh_xform(name=mesh_name)
         sprite_xform = self.get_xform(camera_pos=camera_pos)
 
-        engine.set_model_matrix(base_xform @ extra_xform @ sprite_xform)
+        engine.set_model_matrix(sprite_xform @ extra_xform @ base_xform)
         engine.set_global_color(self.color() if not wireframe else (0, 0, 0))
 
     def update(self, new_model=None,
@@ -610,6 +609,25 @@ class ThreeDeeMultiMesh(ThreeDeeModel):
             if val[0] not in self._mesh_to_names_lookup:
                 self._mesh_to_names_lookup[val[0]] = set()
             self._mesh_to_names_lookup[val[0]].add(mesh_name)
+
+    def apply_translation(self, xyz_trans, name=None):
+        mat = matutils.translation_matrix(xyz_trans)
+        return self.apply_xform(mat, name=name)
+
+    def apply_rotation(self, xyz_rot, name=None):
+        mat = matutils.rotation_matrix(xyz_rot)
+        return self.apply_xform(mat, name=name)
+
+    def apply_scaling(self, xyz_scale, name=None):
+        mat = matutils.scale_matrix(xyz_scale)
+        return self.apply_xform(mat, name=name)
+
+    def apply_xform(self, xform, name=None):
+        names_to_xform = [name] if name is not None else list(self.all_mesh_names())
+        for n in names_to_xform:
+            mesh, old_xform = self._name_to_mesh_and_xform_lookup[n]
+            self._name_to_mesh_and_xform_lookup[n] = (mesh, xform @ old_xform)
+        return self
 
     def all_mesh_names(self) -> typing.Generator[str, None, None]:
         for name in self._name_to_mesh_and_xform_lookup:

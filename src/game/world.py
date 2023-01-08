@@ -1038,9 +1038,7 @@ class WorldRenderer3D(WorldRenderer):
                 rot = -math.atan2(fdir[1], fdir[0]) + math.pi / 2
 
                 forklift_spr = forklift_spr.update(new_model=spriteref.ThreeDeeModels.FORKLIFT,
-                                                   new_position=(x + 0.5 + 0.45 * fdir[0], y / 8 + 0.001,
-                                                                 z + 0.5 + 0.45 * fdir[1]),
-                                                   new_scale=(0.15, 0.15, 0.15),
+                                                   new_position=(x + 0.5, y / 8 + 0.001, z + 0.5),
                                                    new_rotation=(0, rot, 0)
                                                    ).update_mesh("fork",
                                                                  new_pos=(0, e.get_fork_xyz(absolute=False)[2] / 8, 0))

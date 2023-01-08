@@ -47,22 +47,30 @@ class ThreeDeeModels:
 
     @staticmethod
     def load_models_from_disk():
-        xform = lambda ident: ThreeDeeModels._get_xform_for_texture(ident)
+        tex_xform = lambda ident: ThreeDeeModels._get_xform_for_texture(ident)
         s = lambda path: util.resource_path(path)
 
-        ThreeDeeModels.FORKLIFT = threedee.ThreeDeeMultiMesh.load_from_disk("forklift", s("assets/models/forklift/"),
-                                                                            {"body": "body.obj",
-                                                                             "fork": "fork.obj",
-                                                                             "wheels": "wheels.obj"
-                                                                             }, xform("forklift_default"))
-        ThreeDeeModels.FORKLIFT_STATIC = threedee.ThreeDeeMesh.load_from_disk("forklift_static",
-                                                                              s("assets/models/forklift.obj"),
-                                                                              xform("forklift_default"))
+        TDMM = threedee.ThreeDeeMultiMesh
+        TDM = threedee.ThreeDeeMesh
 
-        ThreeDeeModels.SQUARE = threedee.ThreeDeeMesh.load_from_disk("square", s("assets/models/square.obj"),
-                                                                     xform("white"))
-        ThreeDeeModels.CUBE = threedee.ThreeDeeMesh.load_from_disk("cube", s("assets/models/cube.obj"),
-                                                                   xform("white"))
+        ThreeDeeModels.FORKLIFT = TDMM.load_from_disk(
+            "forklift", s("assets/models/forklift/"),
+            {
+                "body": "body.obj",
+                "fork": "fork.obj",
+                "wheels": "wheels.obj"
+            },
+            tex_xform("forklift_default")
+        ).apply_scaling((0.15, 0.15, 0.15))\
+            .apply_translation((0, 0, 0.45))
+
+        ThreeDeeModels.FORKLIFT_STATIC = TDM.load_from_disk(
+            "forklift_static", s("assets/models/forklift.obj"),
+            tex_xform("forklift_default")
+        )
+
+        ThreeDeeModels.SQUARE = TDM.load_from_disk("square", s("assets/models/square.obj"), tex_xform("white"))
+        ThreeDeeModels.CUBE = TDM.load_from_disk("cube", s("assets/models/cube.obj"), tex_xform("white"))
 
     @staticmethod
     def from_2d_model(model_2d):
