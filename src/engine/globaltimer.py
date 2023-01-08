@@ -67,6 +67,7 @@ def get_fps():
 
 
 def get_elapsed_time():
+    """Returns the game's total elapsed time in milliseconds."""
     return _ELAPSED_TIME
 
 

@@ -2,6 +2,7 @@ import math
 import typing
 
 import src.utils.util as util
+import src.engine.globaltimer as globaltimer
 import src.utils.colorutils as colorutils
 
 import src.engine.sprites as sprites
@@ -30,7 +31,10 @@ class Entity:
         self._normalize()
 
     def __eq__(self, other):
-        return self.uid == other.uid
+        if isinstance(other, Entity):
+            return self.uid == other.uid
+        else:
+            return self.uid == other  # so we can be equal to ints
 
     def __hash__(self):
         return hash(self.uid)
@@ -462,7 +466,7 @@ class ForkliftActionHandler:
                                                                   cond=lambda e: e.is_liftable())
             # check to see if the stack is blocked from above
             mut = WorldMutation()
-            mut.updates[forklift] = forklift.copy().move_fork(1, safe=False)
+            mut.reg(forklift, forklift.copy().move_fork(1, safe=False))
             for stack_ent in stack_on_fork.entities:
                 if stack_ent == forklift:
                     if log: print("INFO: you can't lift yourself ._.")
@@ -473,7 +477,7 @@ class ForkliftActionHandler:
                     if log: print(f"INFO: stack will collide if lifted ({stack_ent} -> {col_ent})")
                     return None
 
-                mut.updates[stack_ent] = stack_ent.copy().move((0, 0, 1))
+                mut.reg(stack_ent, stack_ent.copy().move((0, 0, 1)))
 
             return mut
 
@@ -510,12 +514,12 @@ class ForkliftActionHandler:
                         ents_blocked.add(ent_above)
 
             mut = WorldMutation()
-            mut.updates[forklift] = forklift.copy().move_fork(-1, safe=False)
+            mut.reg(forklift, forklift.copy().move_fork(-1, safe=False))
 
             # finally lower the unblocked ents
             for stack_ent in stack_on_fork:
                 if stack_ent not in ents_blocked:
-                    mut.updates[stack_ent] = stack_ent.copy().move((0, 0, -1))
+                    mut.reg(stack_ent, stack_ent.copy().move((0, 0, -1)))
 
             return mut
 
@@ -540,7 +544,7 @@ class ForkliftActionHandler:
                 break
 
         mut = WorldMutation()
-        mut.updates[forklift] = new_forklift
+        mut.reg(forklift, new_forklift)
 
         if not is_stack_supported:
             # rotate the stack
@@ -549,7 +553,7 @@ class ForkliftActionHandler:
                 for world_ent in world_state.all_entities_colliding_with(rotated_ent, cond=lambda e: e not in stack_on_fork):
                     if log: print(f"INFO: stack ent will collide if rotated ({stack_ent} -> {world_ent})")
                     return None
-                mut.updates[stack_ent] = rotated_ent
+                mut.reg(stack_ent, rotated_ent)
 
         return mut
 
@@ -590,7 +594,7 @@ class ForkliftActionHandler:
             return None
 
         mut = WorldMutation()
-        mut.updates[forklift] = new_forklift
+        mut.reg(forklift, new_forklift)
 
         blocked_stack_ents = set()
 
@@ -617,13 +621,13 @@ class ForkliftActionHandler:
                             break
 
         moved_ents = set()
-        moved_ents.add(mut.updates[forklift])
+        moved_ents.add(mut.updates[forklift][1])
 
         # move things that aren't blocked
         for moved_ent in stack_on_fork:
             if moved_ent not in blocked_stack_ents:
-                mut.updates[moved_ent] = moved_ent.copy().move(move_xyz)
-                moved_ents.add(mut.updates[moved_ent])
+                mut.reg(moved_ent, moved_ent.copy().move(move_xyz))
+                moved_ents.add(mut.updates[moved_ent][1])
 
         # ensure things that don't move are supported and won't collide with anything that did move
         for blocked_ent in blocked_stack_ents:
@@ -659,41 +663,82 @@ class ForkliftActionHandler:
 
 class AbstractWorldMutation:
 
+    def is_empty(self) -> bool:
+        raise NotImplementedError()
+
     def apply(self, world_state: 'World'):
         raise NotImplementedError()
 
     def undo(self, world_state: 'World'):
+        raise NotImplementedError()
+
+    def get_entity_mutation(self, ent_id: int, prog: float) -> typing.List[typing.Tuple[Entity, float]]:
         raise NotImplementedError()
 
 
 class WorldMutation(AbstractWorldMutation):
 
     def __init__(self):
-        self.updates = {}   # old copy of Entity -> new copy of Entity
-        self.additions = {}  # new Entities
+        self.updates = {}    # ent_id -> (old copy of Entity, new copy of Entity)
+
+    def is_empty(self):
+        return len(self.updates) == 0
+
+    def reg(self, old_ent: Entity, new_ent: Entity):
+        if old_ent is None and new_ent is None:
+            return
+        elif old_ent is None:
+            self.updates[new_ent.uid] = (None, new_ent)  # addition
+        elif new_ent is None:
+            self.updates[old_ent.uid] = (old_ent, None)  # deletion
+        elif old_ent.uid != new_ent.uid:
+            self.updates[old_ent.uid] = (old_ent, None)  # transitioned into another
+            self.updates[new_ent.uid] = (None, new_ent)
+        else:
+            self.updates[new_ent.uid] = (old_ent, new_ent)  # changed
 
     def apply(self, world_state: 'World'):
-        for old_ent in self.updates:
-            new_ent = self.updates[old_ent]
-            world_state.remove_entity(old_ent)
+        for ent_id in self.updates:
+            old_ent, new_ent = self.updates[ent_id]
+            if old_ent is not None:
+                world_state.remove_entity(old_ent)
             if new_ent is not None:
                 world_state.add_entity(new_ent)
-        for ent in self.additions:
-            world_state.add_entity(ent)
 
     def undo(self, world_state: 'World'):
-        for ent in self.additions:
-            world_state.remove_entity(ent)
-        for (old_ent, new_ent) in self.updates.items():
+        for (old_ent, new_ent) in self.updates.values():
             if new_ent is not None:
                 world_state.remove_entity(new_ent)
-            world_state.add_entity(old_ent)
+            if old_ent is not None:
+                world_state.add_entity(old_ent)
+
+    def get_entity_mutation(self, ent_id: int, prog: float):
+        if ent_id in self.updates:
+            old_ent, new_ent = self.updates[ent_id]
+            if prog <= 0:
+                return [(old_ent, 1)]
+            elif prog >= 1:
+                return [(new_ent, 1)]
+            else:
+                return [(old_ent, prog), (new_ent, 1 - prog)]
+        else:
+            return []
 
 
 class CompositeWorldMutation(AbstractWorldMutation):
 
     def __init__(self, muts=()):
         self.muts: typing.List[AbstractWorldMutation] = list(muts)
+
+    def is_empty(self):
+        for mut in self.muts:
+            if not mut.is_empty():
+                return False
+        return True
+
+    def add(self, mut):
+        if mut is not None:
+            self.muts.append(mut)
 
     def apply(self, world_state: 'World'):
         for m in self.muts:
@@ -702,6 +747,15 @@ class CompositeWorldMutation(AbstractWorldMutation):
     def undo(self, world_state: 'World'):
         for m in reversed(self.muts):
             m.undo(world_state)
+
+    def get_entity_mutation(self, ent_id: int, prog: float) -> typing.List[typing.Tuple[Entity, float]]:
+        res = []
+        for mut in self.muts:
+            # TODO this is a bit questionable if multiple conflicting mutations
+            #  have occurred to the same entity (e.g. moving & adding).
+            #  So hopefully that hasn't happened.
+            res.extend(mut.get_entity_mutation(ent_id, prog))
+        return res
 
 
 class World:
@@ -814,11 +868,44 @@ def build_sample_world():
 
 class WorldRenderer:
 
-    def update(self, world_state: World):
-        raise NotImplementedError()
+    def __init__(self):
+        self.cur_time = 0
+        self.muts = []  # list of (start_time, end_time, WorldMutation)
 
-    def all_sprites(self):
-        raise NotImplementedError()
+    def register_mutation(self, mut: AbstractWorldMutation, duration_ms: float, start_delay=0, clear_old=True):
+        if clear_old:
+            self.muts.clear()
+        if mut is not None:
+            start_time = self.cur_time + start_delay
+            end_time = start_time + duration_ms
+            if self.cur_time < end_time and start_time < end_time:
+                self.muts.append((start_time, end_time, mut))
+
+    def update_muts(self):
+        if len(self.muts) > 0:
+            self.muts = [m for m in self.muts if m[1] > self.cur_time]
+
+    def all_active_muts(self) -> typing.Generator[typing.Tuple[AbstractWorldMutation, float], None, None]:
+        for m in self.muts:
+            if m[0] <= self.cur_time <= m[1]:
+                yield m[2], 1 - (self.cur_time - m[0]) / (m[1] - m[0])
+
+    def get_mutated_entity_list(self, ent: Entity) -> typing.List[typing.Tuple[Entity, float]]:
+        res = []
+        for mut, prog in self.all_active_muts():
+            entity_list = mut.get_entity_mutation(ent.uid, prog)
+            res.extend(entity_list)
+        if len(res) == 0:
+            return [(ent, 1)]
+        else:
+            return res
+
+    def update(self, world_state: World):
+        self.cur_time += globaltimer.dt()
+        self.update_muts()
+
+    def all_sprites(self) -> typing.Generator[sprites.AbstractSprite, None, None]:
+        pass
 
 
 class WorldRenderer2D(WorldRenderer):
@@ -831,6 +918,7 @@ class WorldRenderer2D(WorldRenderer):
         self._entity_sprites = {}  # ent_id -> AbstractSprite
 
     def update(self, world_state: World):
+        super().update(world_state)
         new_terrain_sprites = {}
         cs = WorldRenderer2D.CELL_SIZE
         xmin, xmax = float('inf'), -float('inf')
@@ -906,11 +994,11 @@ class WorldRenderer3D(WorldRenderer):
 
     def __init__(self):
         super().__init__()
-        self.lock_camera_to_forklift = False
         self._sprite_3ds = {}  # uid -> Sprite3D
         self.camera = threedee.Camera3D(position=(-3.8, 3.2, 2.5), direction=(0.9, -0.4, 0), fov=45)
 
     def update(self, w: World):
+        super().update(w)
         new_sprites = {}
 
         sc = 4
@@ -934,19 +1022,28 @@ class WorldRenderer3D(WorldRenderer):
         forklift_spr = None
 
         for e in w.all_entities():
-            if isinstance(e, Forklift):  # need the forklift to be first for lock-on
-                x, z, y = e.xyz
+            e_list = self.get_mutated_entity_list(e)
+            e_list = [_e for _e in e_list if _e[0] is not None]  # TODO deal with additions / deletions
+
+            x, z, y = util.weighted_average([_ew[0].xyz for _ew in e_list],
+                                            [_ew[1] for _ew in e_list])
+
+            if isinstance(e, Forklift):
                 if e.uid in self._sprite_3ds:
                     forklift_spr = self._sprite_3ds[e.uid]
                 else:
                     forklift_spr = threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT, spriteref.LAYER_3D)
+
                 fdir = e.get_direction()
                 rot = -math.atan2(fdir[1], fdir[0]) + math.pi / 2
+
                 forklift_spr = forklift_spr.update(new_model=spriteref.ThreeDeeModels.FORKLIFT,
-                                                   new_position=(x + 0.5 + 0.45 * fdir[0], y / 8 + 0.001, z + 0.5 + 0.45 * fdir[1]),
+                                                   new_position=(x + 0.5 + 0.45 * fdir[0], y / 8 + 0.001,
+                                                                 z + 0.5 + 0.45 * fdir[1]),
                                                    new_scale=(0.15, 0.15, 0.15),
                                                    new_rotation=(0, rot, 0)
-                                                   ).update_mesh("fork", new_pos=(0, e.get_fork_xyz(absolute=False)[2] / 8, 0))
+                                                   ).update_mesh("fork",
+                                                                 new_pos=(0, e.get_fork_xyz(absolute=False)[2] / 8, 0))
                 new_sprites[e.uid] = forklift_spr
             elif isinstance(e, Block):
                 bb = e.get_bounding_box()
@@ -962,17 +1059,25 @@ class WorldRenderer3D(WorldRenderer):
 
         self._sprite_3ds = new_sprites
         for lay in renderengine.get_instance().get_layers(spriteref.world_3d_layer_ids()):
-            lay.set_camera(self.camera)
-
             if forklift_spr is not None:
                 lay.set_light_sources([(util.add(forklift_spr.position(), (0, 2, 0)),
                                         colorutils.lighter(forklift_spr.color(), 0.7))])
+        self.update_camera()
 
-                if self.lock_camera_to_forklift:
-                    model_pos = forklift_spr.position()
-                    cam_pos = self.camera.get_position()
-                    view_dir = util.set_length(util.sub(model_pos, cam_pos), 1)
-                    self.camera.set_direction(view_dir)
+    def update_camera(self, new_camera=None):
+        if new_camera is not None:
+            self.camera = new_camera
+        for lay in renderengine.get_instance().get_layers(spriteref.world_3d_layer_ids()):
+            lay.set_camera(self.camera)
+
+    def get_sprite_for_ent(self, ent_or_id) -> threedee.Sprite3D:
+        if ent_or_id is None:
+            return None
+        if isinstance(ent_or_id, Entity):
+            ent_or_id = ent_or_id.uid
+        if ent_or_id in self._sprite_3ds:
+            return self._sprite_3ds[ent_or_id]
+        return None
 
     def all_sprites(self):
         for spr in self._sprite_3ds.values():

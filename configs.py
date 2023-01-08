@@ -6,6 +6,8 @@ version = "0.0.0"
 userdata_subdir = "forklift"
 runtime_icon_path = os.path.join("assets", "icon.png")
 
+action_speed_ms = 100
+
 
 """ Display """
 default_window_size = (640, 480)  # size of window when the game starts.

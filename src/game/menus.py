@@ -194,10 +194,9 @@ class InGameScene(scenes.Scene):
             dzoom = inputs.get_instance().is_held_two_way(negative=configs.ROTATE_UP, positive=configs.ROTATE_DOWN)
             self.camera_dist = util.bound(self.camera_dist + dzoom * globaltimer.dt() / 1000 * 1, 0.5, 3)
 
-            flift = self.world_state.get_forklift()
-            if flift is not None:
-                fx, fy, fz = flift.get_xyz()
-                self.camera_focus_pt = (fx + 0.5, fz / 8, fy + 0.5)
+            flift_spr = renderer.get_sprite_for_ent(self.world_state.get_forklift())
+            if flift_spr is not None:
+                self.camera_focus_pt = flift_spr.position()
 
             base_offset_xz = self.camera_base_offset[0], self.camera_base_offset[2]
             cur_offset_xz = util.rotate(base_offset_xz, self.camera_theta)
@@ -207,34 +206,37 @@ class InGameScene(scenes.Scene):
 
             renderer.camera.set_position(util.add(self.camera_focus_pt, offset_xyz))
             renderer.camera.set_direction(util.negate(offset_xyz))
+            renderer.update_camera()
 
     def update(self):
         if inputs.get_instance().was_pressed(pygame.K_F2):
             self.active_renderer_idx = (self.active_renderer_idx + 1) % len(self.renderers)
 
-        self._update_3d_camera()
-
         if inputs.get_instance().was_pressed(configs.RESET):
             print("INFO: Reset world")
             self.world_state = world.build_sample_world()
+
+        total_mut = world.CompositeWorldMutation()
 
         if self.world_state.get_forklift() is not None:
             dxy = inputs.get_instance().was_pressed_four_way(left=configs.MOVE_LEFT, right=configs.MOVE_RIGHT,
                                                              negy=configs.MOVE_UP, posy=configs.MOVE_DOWN)
             if dxy[0] != 0:
                 mut = world.ForkliftActionHandler.rotate_forklift(self.world_state.get_forklift(), dxy[0] > 0, self.world_state)
-                if mut is not None:
-                    mut.apply(self.world_state)
+                total_mut.add(mut)
 
             if dxy[1] != 0:
                 mut = world.ForkliftActionHandler.move_forklift(self.world_state.get_forklift(), dxy[1] > 0, self.world_state)
-                if mut is not None:
-                    mut.apply(self.world_state)
+                total_mut.add(mut)
 
             df = inputs.get_instance().was_pressed_two_way(negative=configs.CROUCH, positive=configs.JUMP)
             if df != 0:
                 mut = world.ForkliftActionHandler.move_fork(self.world_state.get_forklift(), df, self.world_state)
-                if mut is not None:
-                    mut.apply(self.world_state)
+                total_mut.add(mut)
+
+        if not total_mut.is_empty():
+            total_mut.apply(self.world_state)
+            self.get_renderer().register_mutation(total_mut, configs.action_speed_ms, clear_old=True)
 
         self.renderers[self.active_renderer_idx].update(self.world_state)
+        self._update_3d_camera()

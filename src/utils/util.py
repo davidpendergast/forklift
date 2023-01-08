@@ -78,6 +78,24 @@ def average(v_list):
     return mult(sum_v, 1 / len(v_list))
 
 
+def weighted_average(v_list, weights):
+    if len(v_list) == 0 or len(v_list) != len(weights):
+        raise ValueError(f"invalid list lengths for weighted average: {len(v_list)=}, {len(weights)=}")
+    n = len(v_list[0])
+    if n == 0:
+        return tuple()
+    total_weight = 0
+    wsum_v = [0 for _ in range(0, n)]
+    for v, w in zip(v_list, weights):
+        for i in range(0, n):
+            wsum_v[i] += v[i] * w
+        total_weight += w
+    if total_weight == 0:
+        raise ValueError("total weight is zero.")
+    else:
+        return mult(wsum_v, 1 / total_weight)
+
+
 def rotate(v, rad):
     cos = math.cos(rad)
     sin = math.sin(rad)
