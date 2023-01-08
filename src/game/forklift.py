@@ -61,7 +61,7 @@ class ForkliftGame(game.Game):
         globaltimer.set_show_fps(True)
 
         # scenes.create_instance(menus.Test3DMenu())
-        scenes.create_instance(menus.InGameScene(world.build_sample_world()))
+        scenes.create_instance(menus.InGameScene(idx=1))
 
     def update(self) -> bool:
         scenes.get_instance().update()

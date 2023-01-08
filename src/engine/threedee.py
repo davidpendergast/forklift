@@ -598,8 +598,23 @@ class ThreeDeeModel:
     def all_names_for_mesh(self, mesh) -> typing.Set['str']:
         raise NotImplementedError()
 
+    def apply_translation(self, xyz_trans, name=None):
+        mat = matutils.translation_matrix(xyz_trans)
+        return self.apply_xform(mat, name=name)
+
+    def apply_rotation(self, xyz_rot, name=None):
+        mat = matutils.rotation_matrix(xyz_rot)
+        return self.apply_xform(mat, name=name)
+
+    def apply_scaling(self, xyz_scale, name=None):
+        mat = matutils.scale_matrix(xyz_scale)
+        return self.apply_xform(mat, name=name)
+
+    def apply_xform(self, xform, name=None) -> 'ThreeDeeModel':
+        raise NotImplementedError()
+
     def get_xform(self, name='base') -> numpy.ndarray:
-        return IDENTITY
+        raise NotImplementedError()
 
     def get_mesh(self, name='base') -> 'ThreeDeeMesh':
         raise NotImplementedError()
@@ -635,19 +650,7 @@ class ThreeDeeMultiMesh(ThreeDeeModel):
                 self._mesh_to_names_lookup[val[0]] = set()
             self._mesh_to_names_lookup[val[0]].add(mesh_name)
 
-    def apply_translation(self, xyz_trans, name=None):
-        mat = matutils.translation_matrix(xyz_trans)
-        return self.apply_xform(mat, name=name)
-
-    def apply_rotation(self, xyz_rot, name=None):
-        mat = matutils.rotation_matrix(xyz_rot)
-        return self.apply_xform(mat, name=name)
-
-    def apply_scaling(self, xyz_scale, name=None):
-        mat = matutils.scale_matrix(xyz_scale)
-        return self.apply_xform(mat, name=name)
-
-    def apply_xform(self, xform, name=None):
+    def apply_xform(self, xform, name=None) -> 'ThreeDeeMultiMesh':
         names_to_xform = [name] if name is not None else list(self.all_mesh_names())
         for n in names_to_xform:
             mesh, old_xform = self._name_to_mesh_and_xform_lookup[n]
@@ -706,6 +709,8 @@ class ThreeDeeMesh(ThreeDeeModel):
         self._map_from_texture_to_atlas = map_from_texture_to_atlas
         self._cached_atlas_coords = []  # list of (x, y)
 
+        self._base_xform = IDENTITY
+
     def get_mesh_id(self):
         return self._mesh_id
 
@@ -722,6 +727,13 @@ class ThreeDeeMesh(ThreeDeeModel):
         if len(self._cached_atlas_coords) == 0:
             self._cached_atlas_coords = [self._map_from_texture_to_atlas(xy) for xy in self._native_texture_coords]
         return self._cached_atlas_coords
+
+    def apply_xform(self, xform, name='base') -> 'ThreeDeeMesh':
+        self._base_xform = xform @ self._base_xform
+        return self
+
+    def get_xform(self, name='base') -> numpy.ndarray:
+        return self._base_xform
 
     def add_urself(self, vertices, normals, tex_coords, indices):
         for i in range(0, 3 * len(self.get_vertices())):
@@ -744,9 +756,6 @@ class ThreeDeeMesh(ThreeDeeModel):
 
     def all_names_for_mesh(self, mesh) -> typing.Set['str']:
         return {'base'}
-
-    def get_xform(self, name='base') -> numpy.ndarray:
-        return IDENTITY
 
     def get_mesh(self, name='base') -> 'ThreeDeeMesh':
         return self

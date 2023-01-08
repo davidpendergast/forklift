@@ -52,6 +52,9 @@ class Entity:
     def get_direction(self) -> typing.Tuple[int, int]:
         return self.direction
 
+    def get_direction_idx(self) -> int:
+        return Entity.DIRECTIONS.index(self.direction)
+
     def get_cells(self, absolute=True) -> typing.Set[typing.Tuple[int, int, int]]:
         x, y, z = self.xyz if absolute else (0, 0, 0)
         return set((c[0] + x, c[1] + y, c[2] + z) for c in self.cells)
@@ -846,7 +849,12 @@ class World:
         return False
 
 
-def build_sample_world():
+def build_sample_world(idx=0):
+    levels = [build_complex_world, build_single_block_world]
+    return levels[idx % len(levels)]()
+
+
+def build_complex_world():
     w = World()
     flift = (3, 1), (1, 0)
     holes = {(5, 0), (5, 1), (6, 1), (7, 1), (6, 2), (7, 2), (6, 3), (7, 3)}
@@ -855,6 +863,27 @@ def build_sample_world():
               [(0 + i, 4) for i in range(3)],
               [(3 + i, 3) for i in range(5)],
               [(0 + i, 0, 8) for i in range(3)]]
+    for x in range(0, 8):
+        for y in range(0, 5):
+            if (x, y) not in holes:
+                w.terrain[(x, y)] = 0
+
+    w.add_entity(Forklift((*flift[0], 0), flift[1]))
+    for b in boxes:
+        w.add_entity(Block((0, 0, 0), [(*b, z) for z in range(0, 8)], color=(110, 112, 92), liftable=True))
+    for plist in planks:
+        w.add_entity(Block((0, 0, 0), [(p[0], p[1], (p[2] if len(p) >= 3 else 0)) for p in plist],
+                           color=(164, 153, 131), liftable=True))
+
+    return w
+
+
+def build_single_block_world():
+    w = World()
+    flift = (3, 1), (1, 0)
+    holes = {(5, 0), (5, 1), (6, 1), (7, 1), (6, 2), (7, 2), (6, 3), (7, 3)}
+    boxes = [(0, 0)]
+    planks = []
     for x in range(0, 8):
         for y in range(0, 5):
             if (x, y) not in holes:
@@ -1009,31 +1038,32 @@ class WorldRenderer3D(WorldRenderer):
 
     def _get_sprite_for(self, e: Entity, spr_id):
         x, z, y = e.get_xyz()  # 3d coordinates, z and y are swapped intentionally
+        edir = e.get_direction()
+        rot = -math.atan2(edir[1], edir[0]) + math.pi / 2
+
         if isinstance(e, Forklift):
             if spr_id in self._sprite_3ds:
                 forklift_spr = self._sprite_3ds[spr_id]
             else:
                 forklift_spr = threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT, spriteref.LAYER_3D)
 
-            fdir = e.get_direction()
-            rot = -math.atan2(fdir[1], fdir[0]) + math.pi / 2
-
+            fork_pos = (0, e.get_fork_xyz(absolute=False)[2] / 8, 0)
             forklift_spr = forklift_spr.update(new_model=spriteref.ThreeDeeModels.FORKLIFT,
                                                new_position=(x + 0.5, y / 8 + 0.001, z + 0.5),
                                                new_rotation=(0, rot, 0)
-                                               ).update_mesh("fork",
-                                                             new_pos=(0, e.get_fork_xyz(absolute=False)[2] / 8, 0))
+                                               ).update_mesh("fork", new_pos=fork_pos)
             return forklift_spr
         elif isinstance(e, Block):
-            bb = e.get_bounding_box()
+            bb = e.copy().rotate(-e.get_direction_idx()).get_bounding_box()
             if spr_id in self._sprite_3ds:
                 spr = self._sprite_3ds[spr_id]
             else:
                 spr = threedee.Sprite3D(spriteref.ThreeDeeModels.CUBE, spriteref.LAYER_3D)
             spr = spr.update(new_model=spriteref.ThreeDeeModels.CUBE,
-                             new_position=(bb[0], bb[2] / 8, bb[1]),
-                             new_scale=(4 * bb[3], 4 * bb[5] / 8, 4 * bb[4]),
-                             new_color=(colorutils.to_float(e.get_debug_color())))
+                             new_position=(bb[0] + bb[3] / 2, bb[2] / 8, bb[1] + bb[4] / 2),
+                             new_rotation=(0, globaltimer.get_elapsed_time() / 1000 * math.pi / 8, 0),
+                             new_scale=(bb[3], bb[5] / 8, bb[4]),
+                             new_color=colorutils.to_float(e.get_debug_color()))
             return spr
         else:
             return None
@@ -1042,7 +1072,6 @@ class WorldRenderer3D(WorldRenderer):
         super().update(w)
         new_sprites = {}
 
-        sc = 4
         for t_xy in w.terrain:
             x, y = t_xy
             z = w.terrain[t_xy]
@@ -1056,8 +1085,9 @@ class WorldRenderer3D(WorldRenderer):
             if (x + y) % 2 == 0:
                 color = colorutils.darker(color)
 
-            spr = spr.update(new_model=spriteref.ThreeDeeModels.SQUARE, new_position=(x, z / 8, y),
-                             new_color=color, new_scale=(sc, sc, sc))
+            spr = spr.update(new_model=spriteref.ThreeDeeModels.SQUARE,
+                             new_position=(x + 0.5, z / 8, y + 0.5),
+                             new_color=color)
             new_sprites[t_id] = spr
 
         forklift_spr = None

@@ -31,7 +31,6 @@ def _build_demo_sprites():
         res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.SQUARE, spriteref.LAYER_3D,
                                      (x, z, y), color=(0.15, 0.15, 0.15), scale=(sc, sc, sc)))  # coordinates man
 
-    sc = 2
     for e in w.all_entities():
         if isinstance(e, world.Forklift):  # need the forklift to be first for lock-on
             x, z, y = e.xyz
@@ -42,7 +41,7 @@ def _build_demo_sprites():
         if isinstance(e, world.Block):
             bb = e.get_bounding_box()
             res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.CUBE, spriteref.LAYER_3D,
-                                         position=(bb[0], bb[2], bb[1]), scale=(sc * bb[3], sc * bb[5] / 8, sc * bb[4]),
+                                         position=(bb[0], bb[2], bb[1]), scale=(bb[3], bb[5] / 8, bb[4]),
                                          color=(colorutils.to_float(e.get_debug_color()))))
 
     return res
@@ -165,9 +164,10 @@ class Test3DMenu(scenes.Scene):
 
 class InGameScene(scenes.Scene):
 
-    def __init__(self, world_state: world.World):
+    def __init__(self, idx=0):
         super().__init__()
-        self.world_state = world_state
+        self._sample_world_idx = idx
+        self.world_state = world.build_sample_world(self._sample_world_idx)
         self.renderers = [world.WorldRenderer2D(), world.WorldRenderer3D()]
         self.active_renderer_idx = 0
 
@@ -235,7 +235,8 @@ class InGameScene(scenes.Scene):
 
         if inputs.get_instance().was_pressed(configs.RESET):
             print("INFO: Reset world")
-            self.world_state = world.build_sample_world()
+            self._sample_world_idx += 1
+            self.world_state = world.build_sample_world(idx=self._sample_world_idx)
 
         total_mut = world.CompositeWorldMutation()
 

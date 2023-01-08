@@ -59,18 +59,23 @@ class ThreeDeeModels:
                 "body": "body.obj",
                 "fork": "fork.obj",
                 "wheels": "wheels.obj"
-            },
-            tex_xform("forklift_default")
-        ).apply_scaling((0.15, 0.15, 0.15))\
+            }, tex_xform("forklift_default"))\
+            .apply_scaling((0.15, 0.15, 0.15))\
             .apply_translation((0, 0, 0.45))
 
         ThreeDeeModels.FORKLIFT_STATIC = TDM.load_from_disk(
             "forklift_static", s("assets/models/forklift.obj"),
-            tex_xform("forklift_default")
-        )
+            tex_xform("forklift_default"))
 
-        ThreeDeeModels.SQUARE = TDM.load_from_disk("square", s("assets/models/square.obj"), tex_xform("white"))
-        ThreeDeeModels.CUBE = TDM.load_from_disk("cube", s("assets/models/cube.obj"), tex_xform("white"))
+        # model is 1x0x1, origin is at center
+        ThreeDeeModels.SQUARE = TDM.load_from_disk("square", s("assets/models/square.obj"), tex_xform("white"))\
+            .apply_scaling((4, 4, 4))\
+            .apply_translation((-0.5, 0, -0.5))
+
+        # model is 1x1x1, origin is at center of bottom face
+        ThreeDeeModels.CUBE = TDM.load_from_disk("cube", s("assets/models/cube.obj"), tex_xform("white"))\
+            .apply_scaling((4, 4, 4))\
+            .apply_translation((-0.5, 0, -0.5))
 
     @staticmethod
     def from_2d_model(model_2d):
