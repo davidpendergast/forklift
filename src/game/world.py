@@ -170,6 +170,18 @@ class Entity:
         else:
             return xyz in self.cells
 
+    def contains_any(self, xyz_list, absolute=True):
+        for xyz in xyz_list:
+            if self.contains_cell(xyz, absolute=absolute):
+                return True
+        return False
+
+    def contains_all(self, xyz_list, absolute=True):
+        for xyz in xyz_list:
+            if not self.contains_cell(xyz, absolute=absolute):
+                return False
+        return True
+
     def collides(self, other):
         cells1 = self.get_cells()
         cells2 = other.get_cells()
@@ -1054,14 +1066,15 @@ class WorldRenderer3D(WorldRenderer):
                                                ).update_mesh("fork", new_pos=fork_pos)
             return forklift_spr
         elif isinstance(e, Block):
-            bb = e.copy().rotate(-e.get_direction_idx()).get_bounding_box()
+            # TODO hacks here covering up some issue w/ direction indices & models' base directions
+            bb = e.copy().rotate(-e.get_direction_idx() + 1).get_bounding_box()
             if spr_id in self._sprite_3ds:
                 spr = self._sprite_3ds[spr_id]
             else:
                 spr = threedee.Sprite3D(spriteref.ThreeDeeModels.CUBE, spriteref.LAYER_3D)
             spr = spr.update(new_model=spriteref.ThreeDeeModels.CUBE,
                              new_position=(bb[0] + bb[3] / 2, bb[2] / 8, bb[1] + bb[4] / 2),
-                             new_rotation=(0, globaltimer.get_elapsed_time() / 1000 * math.pi / 8, 0),
+                             new_rotation=(0, rot, 0),
                              new_scale=(bb[3], bb[5] / 8, bb[4]),
                              new_color=colorutils.to_float(e.get_debug_color()))
             return spr
