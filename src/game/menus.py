@@ -252,6 +252,12 @@ class InGameScene(scenes.Scene):
                 total_mut.add(mut)
 
             df = inputs.get_instance().was_pressed_two_way(negative=configs.CROUCH, positive=configs.JUMP)
+            if df == 0 and inputs.get_instance().is_held_two_way(negative=configs.CROUCH, positive=configs.JUMP) != 0:
+                if inputs.get_instance().was_pressed_or_held_and_repeated(configs.JUMP, delay=2, freq=6):
+                    df += 1
+                elif inputs.get_instance().was_pressed_or_held_and_repeated(configs.CROUCH, delay=2, freq=6):
+                    df -= 1
+
             if df != 0:
                 mut = world.ForkliftActionHandler.move_fork(self.world_state.get_forklift(), df, self.world_state)
                 total_mut.add(mut)
