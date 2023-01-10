@@ -243,6 +243,10 @@ class InputState:
 
     def mouse_is_dragging(self, button=1):
         return self.mouse_drag_total(button=button) is not None
+
+    def get_mouse_scroll_this_frame(self):
+        y = int(self.mouse_was_pressed(button=5)) - int(self.mouse_was_pressed(button=4))
+        return (0, y)  # TODO x?
         
     def mouse_pos(self):
         return self._mouse_pos

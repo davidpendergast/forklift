@@ -478,7 +478,6 @@ class ForkliftActionHandler:
     @staticmethod
     def raise_fork(forklift: Forklift, world_state: 'World', log=True) -> typing.Optional['WorldMutation']:
         if forklift.fork_z >= forklift.fork_z_bounds[1]:
-            if log: print(f"INFO: fork is already at max height ({forklift.fork_z})")
             return None
         else:
             stack_on_fork = ForkliftActionHandler.get_stack_above(forklift.get_fork_xyz(), world_state,
@@ -503,7 +502,6 @@ class ForkliftActionHandler:
     @staticmethod
     def lower_fork(forklift: Forklift, world_state: 'World', log=True) -> typing.Optional['WorldMutation']:
         if forklift.fork_z <= forklift.fork_z_bounds[0]:
-            if log: print(f"INFO: fork is already at min height ({forklift.fork_z})")
             return None
         else:
             stack_on_fork = ForkliftActionHandler.get_stack_above(forklift.get_fork_xyz(), world_state,

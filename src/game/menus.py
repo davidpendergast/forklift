@@ -202,7 +202,8 @@ class InGameScene(scenes.Scene):
             zoom_keyinput = inputs.get_instance().is_held_two_way(negative=configs.ROTATE_UP, positive=configs.ROTATE_DOWN)
             dzoom_keys = zoom_keyinput * globaltimer.dt() / 1000 * 1
             dzoom_mouse = (drag_xy[1] / screen_size[1]) * yfov * math.pi / 180 * configs.mouse_camera_sensitivity_y
-            self.camera_dist = util.bound(self.camera_dist + dzoom_keys + dzoom_mouse, 0.5, 3)
+            dzoom_scroll = inputs.get_instance().get_mouse_scroll_this_frame()[1]
+            self.camera_dist = util.bound(self.camera_dist + dzoom_keys + dzoom_mouse - dzoom_scroll / 5, 0.5, 3)
 
             flift_spr = renderer.get_sprite_for_ent(self.world_state.get_forklift())
             if flift_spr is not None:
