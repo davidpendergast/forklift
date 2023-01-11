@@ -602,13 +602,26 @@ class ForkliftActionHandler:
             -> typing.Optional['WorldMutation']:
 
         # TODO should the forklift be able to 'push' stuff?
+        #  - no, OSHA
         stack_on_fork = ForkliftActionHandler.get_stack_above(forklift.get_fork_xyz(), world_state)
-        move_xyz = (*forklift.get_direction(), 0) if forward else (*util.negate(forklift.get_direction()), 0)
-        new_forklift = forklift.copy().move(move_xyz)
+        move_xy = forklift.get_direction() if forward else util.negate(forklift.get_direction())
 
-        # ensure the forklift can move there, ignoring stack
-        if not ForkliftActionHandler.is_valid_position_for_forklift(new_forklift, world_state, stack_on_fork=stack_on_fork, log=log):
+        move_z = None
+        for dz in (0, -1, 1):
+            new_forklift = forklift.copy().move((*move_xy, dz))
+            if ForkliftActionHandler.is_valid_position_for_forklift(new_forklift, world_state,
+                                                                    stack_on_fork=stack_on_fork, log=False):
+                move_z = dz
+                break
+
+        if move_z is None:  # can't move there
+            if log:
+                # just to make it log
+                ForkliftActionHandler.is_valid_position_for_forklift(forklift.copy().move((*move_xy, 0)),
+                                                                     world_state, stack_on_fork=stack_on_fork, log=log)
             return None
+
+        move_xyz = (*move_xy, move_z)
 
         mut = WorldMutation()
         mut.reg(forklift, new_forklift)
@@ -662,7 +675,7 @@ class ForkliftActionHandler:
             # see if it's supported by anything in the world (including other things that didn't move).
             if not supported:
                 for cell_below in blocked_ent.get_bottom_cells(add_z=-1):
-                    if world_state.get_terrain_height(cell_below[:2], or_else=-1000) == cell_below[2] + 1:
+                    if world_state.get_terrain_height(cell_below[:2]) == cell_below[2] + 1:
                         supported = True
                         break
                     for _ in world_state.all_entities_at(cell_below, cond=lambda e: e not in moved_ents):
@@ -844,7 +857,7 @@ class World:
             if ent in ents_above:
                 yield ent
 
-    def get_terrain_height(self, xy, or_else=-1) -> int:
+    def get_terrain_height(self, xy, or_else=-1000) -> int:
         if xy in self.terrain:
             return self.terrain[xy]
         else:
@@ -868,10 +881,12 @@ def build_complex_world():
     w = World()
     flift = (3, 1), (1, 0)
     holes = {(5, 0), (5, 1), (6, 1), (7, 1), (6, 2), (7, 2), (6, 3), (7, 3)}
-    boxes = [(1, 0), (2, 0), (4, 0), (0, 3)]
+    boxes = [(1, 0), (2, 0)]
+    half_boxes = [(4, 0), (0, 3)]
+    pallet = [(5, 3), (2, 3)]
     planks = [[(0, 0 + i) for i in range(3)],
               [(0 + i, 4) for i in range(3)],
-              [(3 + i, 3) for i in range(5)],
+              [(3 + i, 4) for i in range(5)],
               [(0 + i, 0, 8) for i in range(3)]]
     for x in range(0, 8):
         for y in range(0, 5):
@@ -880,10 +895,14 @@ def build_complex_world():
 
     w.add_entity(Forklift((*flift[0], 0), flift[1]))
     for b in boxes:
-        w.add_entity(Block((0, 0, 0), [(*b, z) for z in range(0, 8)], color=(110, 112, 92), liftable=True))
+        w.add_entity(Block((0, 0, 0), [(*b, z) for z in range(0, 8)], color=(112, 112, 92), liftable=True))
+    for hb in half_boxes:
+        w.add_entity(Block((0, 0, 0), [(*hb, z) for z in range(0, 4)], color=(128, 144, 160), liftable=True))
+    for p in pallet:
+        w.add_entity(Block((0, 0, 0), [(*p, z) for z in range(0, 2)], color=(196, 196, 196), liftable=True))
     for plist in planks:
         w.add_entity(Block((0, 0, 0), [(p[0], p[1], (p[2] if len(p) >= 3 else 0)) for p in plist],
-                           color=(164, 153, 131), liftable=True))
+                           color=(160, 160, 128), liftable=True))
 
     return w
 
