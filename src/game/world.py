@@ -934,12 +934,12 @@ def build_complex_world():
     w = World()
     flift = (3, 1), (1, 0)
     holes = {(5, 0), (5, 1), (6, 1), (7, 1), (6, 2), (7, 2), (6, 3), (7, 3)}
-    boxes = [(1, 0), (2, 0)]
+    boxes = [(1, 0)]
     half_boxes = [(4, 0), (0, 3)]
     pallet = [(5, 3), (2, 3)]
     planks = [[(0, 0 + i) for i in range(3)],
               [(0 + i, 4) for i in range(3)],
-              [(3 + i, 4) for i in range(5)],
+              [(4 + i, 4) for i in range(3)],
               [(0 + i, 0, 8) for i in range(3)]]
     for x in range(0, 8):
         for y in range(0, 5):
