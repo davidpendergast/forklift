@@ -425,6 +425,42 @@ class LiftableEntityStack:
 
         return did_change
 
+    def _traverse(self, start, find_neighbors_func, exclude=(), ignore=()) -> typing.Generator[Entity, None, None]:
+        seen = set()
+        q = []
+        if isinstance(start, Entity):
+            q.append(start)
+            seen.add(start)
+        else:
+            q.extend(start)
+            seen.update(start)
+        while len(q) > 0:
+            cur = q.pop(-1)
+            for e in find_neighbors_func(cur):
+                if e in seen or e in exclude:
+                    continue
+                else:
+                    seen.add(e)
+                    q.append(e)
+                    if e not in ignore:
+                        yield e
+
+    def all_above_recurse(self, start, exclude=(), ignore=()) -> typing.Generator[Entity, None, None]:
+        """Recursively finds all stack entities that are above the given entity or collection of entities.
+            start: an Entity or collection of Entities.
+            exclude: collection of Entities to pretend don't exist.
+            ignore: collection of Entities to recurse upon but not yield.
+        """
+        return self._traverse(start, lambda x: self.below[x], exclude=exclude, ignore=ignore)
+
+    def all_below_recurse(self, start, exclude=(), ignore=()) -> typing.Generator[Entity, None, None]:
+        """Recursively finds all stack entities that are below the given entity or collection of entities.
+            start: an Entity or collection of Entities.
+            exclude: collection of Entities to pretend don't exist.
+            ignore: collection of Entities to recurse upon but not yield.
+        """
+        return self._traverse(start, lambda x: self.above[x], exclude=exclude, ignore=ignore)
+
 
 class ForkliftActionHandler:
 
@@ -554,20 +590,37 @@ class ForkliftActionHandler:
                                                                     stack_on_fork=stack_on_fork):
             return None
 
-        is_stack_supported = False  # TODO allow stack to be partially supported
+        directly_supported = set()
         for stack_ent in stack_on_fork:
             if world_state.is_supported_from_below(stack_ent, cond=lambda e: e not in stack_on_fork):
-                is_stack_supported = True  # stack is supported, so keep it stationary
-                break
+                directly_supported.add(stack_ent)
+
+        all_supported = set(stack_on_fork.all_above_recurse(directly_supported)) | directly_supported
+
+        if len(all_supported) == 0:
+            stack_to_rotate = stack_on_fork
+        elif all_supported == stack_on_fork.entities:
+            stack_to_rotate = None
+        else:
+            stack_to_rotate = LiftableEntityStack()
+            for stack_ent in stack_on_fork:
+                if stack_ent not in all_supported:
+                    stack_to_rotate.add(stack_ent)
+                    for below_ent in stack_on_fork.above[stack_ent]:
+                        if below_ent not in all_supported:
+                            stack_to_rotate.set_above(stack_ent, below_ent)
+                    for above_ent in stack_on_fork.below[stack_ent]:
+                        if above_ent not in all_supported:
+                            stack_to_rotate.set_above(above_ent, stack_ent)
 
         mut = WorldMutation()
         mut.reg(forklift, new_forklift)
 
-        if not is_stack_supported:
+        if stack_to_rotate is not None:
             # rotate the stack
-            for stack_ent in stack_on_fork:
+            for stack_ent in stack_to_rotate:
                 rotated_ent = stack_ent.copy().rotate(cw_cnt, abs_pivot_pt=abs_pivot_pt)
-                for world_ent in world_state.all_entities_colliding_with(rotated_ent, cond=lambda e: e not in stack_on_fork):
+                for world_ent in world_state.all_entities_colliding_with(rotated_ent, cond=lambda e: e not in stack_to_rotate):
                     if log: print(f"INFO: stack ent will collide if rotated ({stack_ent} -> {world_ent})")
                     return None
                 mut.reg(stack_ent, rotated_ent)

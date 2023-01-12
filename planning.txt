@@ -6,6 +6,6 @@
 
 Bugs:
 
-- blocks can be left stuck to the underside of other blocks
-- when moving backwards off a 1-high block, if the fork is at z=0 it'll slip under the block 
-    - (should it raise 1 automatically?)
+[X] blocks can be left stuck to the underside of other blocks
+[ ] when moving backwards off a 1-high block, if the fork is at z=0 it'll slip under the block 
+      - (should it raise 1 automatically?)
