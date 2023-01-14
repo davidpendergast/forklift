@@ -36,6 +36,10 @@ class ThreeDeeModels:
     FORKLIFT = None
     SQUARE = None
     CUBE = None
+    SPHERE = None
+    WEDGE = None
+    CYLINDER = None
+    DIAMOND = None
 
     _2D_MODEL_CACHE = {}  # ImageModel -> ThreeDeeModel
 
@@ -59,13 +63,15 @@ class ThreeDeeModels:
                 "body": "body.obj",
                 "fork": "fork.obj",
                 "wheels": "wheels.obj"
-            }, tex_xform("forklift_default"))\
-            .apply_scaling((0.15, 0.15, 0.15))\
+            }, tex_xform("forklift_default")
+        ).apply_scaling((0.15, 0.15, 0.15))\
             .apply_translation((0, 0, 0.45))
 
         ThreeDeeModels.FORKLIFT_STATIC = TDM.load_from_disk(
-            "forklift_static", s("assets/models/forklift.obj"),
-            tex_xform("forklift_default"))
+            "forklift_static",
+            s("assets/models/forklift.obj"),
+            tex_xform("forklift_default")
+        )
 
         # model is 1x0x1, origin is at center
         ThreeDeeModels.SQUARE = TDM.load_from_disk("square", s("assets/models/square.obj"), tex_xform("white"))\
@@ -76,6 +82,20 @@ class ThreeDeeModels:
         ThreeDeeModels.CUBE = TDM.load_from_disk("cube", s("assets/models/cube.obj"), tex_xform("white"))\
             .apply_scaling((4, 4, 4))\
             .apply_translation((-0.5, 0, -0.5))
+
+        # model is 1x1x1, origin is at the center
+        ThreeDeeModels.SPHERE = TDM.load_from_disk("sphere", s("assets/models/sphere8.obj"), tex_xform("white"))
+
+        # model is 1x1x1, origin is at the center of bottom face, "wedge" goes upward in the positive y direction:
+        #  / |  --> y
+        # /__|
+        ThreeDeeModels.WEDGE = TDM.load_from_disk("wedge", s("assets/models/wedge.obj"), tex_xform("white"))
+
+        # model is 1x1x1, origin is at the center of the bottom face
+        ThreeDeeModels.CYLINDER = TDM.load_from_disk("cylinder", s("assets/models/cylinder.obj"), tex_xform("white"))
+
+        # model is 1x1x1-ish, origin is at the center
+        ThreeDeeModels.DIAMOND = TDM.load_from_disk("diamond", s("assets/models/diamond.obj"), tex_xform("white"))
 
     @staticmethod
     def from_2d_model(model_2d):
@@ -98,6 +118,13 @@ class TextureSheet(spritesheets.SpriteSheet):
         super().draw_to_atlas(atlas, sheet, start_pos=start_pos)
         atlas_size = (atlas.get_width(), atlas.get_height())
         sheet_rect = [start_pos[0], start_pos[1], sheet.get_width(), sheet.get_height()]
+
+        if configs.debug_corners:
+            x, y, w, h = start_pos[0], start_pos[1], sheet.get_width(), sheet.get_height()
+            atlas.set_at((x, y), (0, 0, 0))
+            atlas.set_at((x + w - 1, y), (255, 0, 0))
+            atlas.set_at((x + w - 1, y + h - 1), (255, 0, 255))
+            atlas.set_at((x, y + h - 1), (0, 0, 255))
 
         def _map_to_atlas(xy):
             atlas_x = (sheet_rect[0] + xy[0] * sheet_rect[2])

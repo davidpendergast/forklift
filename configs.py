@@ -73,5 +73,6 @@ DEBUG_TOGGLE_LIGHTING = "toggle_lighting"
 
 """ 3D Debug """
 rainbow_3d = False
+debug_corners = False
 
 

@@ -28,21 +28,21 @@ def _build_demo_sprites():
     for t_xy in w.terrain:
         x, y = t_xy
         z = w.terrain[t_xy]
-        res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.SQUARE, spriteref.LAYER_3D,
+        res.append(threedee.Sprite3D(spriteref.LAYER_3D, spriteref.ThreeDeeModels.SQUARE,
                                      (x, z, y), color=(0.15, 0.15, 0.15), scale=(sc, sc, sc)))  # coordinates man
 
     for e in w.all_entities():
         if isinstance(e, world.Forklift):  # need the forklift to be first for lock-on
             x, z, y = e.xyz
-            res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT_STATIC, spriteref.LAYER_3D,
+            res.append(threedee.Sprite3D(spriteref.LAYER_3D, spriteref.ThreeDeeModels.FORKLIFT_STATIC,
                                          position=(x + 0.5, y / 8 + 0.001, z + 0.5),
                                          scale=(0.1, 0.1, 0.1),
                                          rotation=(0, 0, 0)))
         if isinstance(e, world.Block):
             bb = e.get_bounding_box()
-            res.append(threedee.Sprite3D(spriteref.ThreeDeeModels.CUBE, spriteref.LAYER_3D,
+            res.append(threedee.Sprite3D(spriteref.LAYER_3D, spriteref.ThreeDeeModels.CUBE,
                                          position=(bb[0], bb[2], bb[1]), scale=(bb[3], bb[5] / 8, bb[4]),
-                                         color=(colorutils.to_float(e.get_debug_color()))))
+                                         color=(colorutils.to_float(e.get_base_color()))))
 
     return res
 
@@ -55,7 +55,7 @@ class Test3DMenu(scenes.Scene):
         if models == 'demo':
             self.sprites = _build_demo_sprites()
         else:
-            self.sprites = [threedee.Sprite3D(m, spriteref.LAYER_3D) for m in util.listify(models)]
+            self.sprites = [threedee.Sprite3D(spriteref.LAYER_3D, m) for m in util.listify(models)]
         self.camera = threedee.KeyboardControlledCamera3D((-3, 1, 1.5), (1, 0, 0))
 
         self.lock_cam_to_model = False

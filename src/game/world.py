@@ -149,8 +149,11 @@ class Entity:
         bb = self.get_bounding_box(absolute=absolute, axes=axes)
         return tuple(bb[i] for i in range(len(bb) // 2))
 
-    def get_debug_color(self):
+    def get_base_color(self):
         return (55, 55, 55)
+
+    def get_color(self):
+        return self.get_base_color()
 
     def copy(self, keep_uid=True) -> 'Entity':
         if type(self) is Entity:
@@ -328,7 +331,7 @@ class Entity:
 
 class Block(Entity):
 
-    def __init__(self, xyz, cells, color=(255, 255, 255), direction=Entity.DIRECTIONS[0], liftable=False, uid=None):
+    def __init__(self, xyz, cells, color=(255, 255, 255), direction=Entity.DIRECTIONS[0], liftable=True, uid=None):
         super().__init__(xyz, cells, direction=direction, uid=uid)
         self.color = color
         self.liftable = liftable
@@ -336,7 +339,7 @@ class Block(Entity):
     def is_liftable(self):
         return self.liftable
 
-    def get_debug_color(self):
+    def get_base_color(self):
         return self.color
 
     def copy(self, keep_uid=True) -> 'Block':
@@ -346,6 +349,33 @@ class Block(Entity):
                      liftable=self.liftable,
                      uid=self.uid if keep_uid else None)
 
+    def is_win(self) -> bool:
+        return False
+
+
+class WinBlock(Block):
+
+    def __init__(self, xyz, cells, color=(255, 255, 0), direction=Entity.DIRECTIONS[0], liftable=True, uid=None):
+        super().__init__(xyz, cells, color=color, direction=direction, liftable=liftable, uid=uid)
+        self._max_darken = 0.25
+        self._darken_period = 1  # second
+
+    def get_color(self):
+        color = super().get_color()
+        t = globaltimer.get_elapsed_time() / 1000
+        darken_pcnt = self._max_darken * 0.5 * (1 + math.sin(t * 2 * math.pi / self._darken_period))
+        return colorutils.to_int(colorutils.darker(colorutils.to_float(color), darken_pcnt))
+
+    def is_win(self) -> bool:
+        return True
+
+    def copy(self, keep_uid=True) -> 'WinBlock':
+        return WinBlock(self.get_xyz(), self.get_cells(absolute=False),
+                        direction=self.get_direction(),
+                        color=self.color,
+                        liftable=self.liftable,
+                        uid=self.uid if keep_uid else None)
+
 
 class Forklift(Entity):
 
@@ -354,7 +384,7 @@ class Forklift(Entity):
         self.fork_z_bounds = fork_z_bounds
         self.fork_z = util.bound(fork_z, *fork_z_bounds)
 
-    def get_debug_color(self):
+    def get_base_color(self):
         return (224, 224, 64)
 
     def get_fork_xyz(self, absolute=True):
@@ -620,7 +650,8 @@ class ForkliftActionHandler:
             # rotate the stack
             for stack_ent in stack_to_rotate:
                 rotated_ent = stack_ent.copy().rotate(cw_cnt, abs_pivot_pt=abs_pivot_pt)
-                for world_ent in world_state.all_entities_colliding_with(rotated_ent, cond=lambda e: e not in stack_to_rotate):
+                for world_ent in world_state.all_entities_colliding_with(rotated_ent,
+                                                                         cond=lambda e: e not in stack_to_rotate):
                     if log: print(f"INFO: stack ent will collide if rotated ({stack_ent} -> {world_ent})")
                     return None
                 mut.reg(stack_ent, rotated_ent)
@@ -935,6 +966,7 @@ def build_complex_world():
     flift = (3, 1), (1, 0)
     holes = {(5, 0), (5, 1), (6, 1), (7, 1), (6, 2), (7, 2), (6, 3), (7, 3)}
     boxes = [(1, 0)]
+    wins = [(2, 0)]
     half_boxes = [(4, 0), (0, 3)]
     pallet = [(5, 3), (2, 3)]
     planks = [[(0, 0 + i) for i in range(3)],
@@ -949,6 +981,8 @@ def build_complex_world():
     w.add_entity(Forklift((*flift[0], 0), flift[1]))
     for b in boxes:
         w.add_entity(Block((0, 0, 0), [(*b, z) for z in range(0, 8)], color=(112, 112, 92), liftable=True))
+    for win in wins:
+        w.add_entity(WinBlock((0, 0, 0), [(*win, z) for z in range(0, 8)], liftable=True))
     for hb in half_boxes:
         w.add_entity(Block((0, 0, 0), [(*hb, z) for z in range(0, 4)], color=(128, 144, 160), liftable=True))
     for p in pallet:
@@ -1063,7 +1097,7 @@ class WorldRenderer2D(WorldRenderer):
         new_entity_sprites = {}
 
         for ent in world_state.all_entities():
-            color = colorutils.to_float(*ent.get_debug_color())
+            color = colorutils.to_float(*ent.get_base_color())
             depth = -ent.get_max(axes='z')[0]
             rect = util.mult(ent.get_bounding_box(axes='xy'), cs)
             rect = util.rect_expand(rect, all_expand=-cs // 16)
@@ -1115,41 +1149,52 @@ class WorldRenderer3D(WorldRenderer):
 
     def __init__(self):
         super().__init__()
-        self._sprite_3ds = {}  # uid -> Sprite3D
+        self._sprite_3ds = {}  # uid -> list of Sprite3D
         self.camera = threedee.Camera3D(position=(-3.8, 3.2, 2.5), direction=(0.9, -0.4, 0), fov=45)
 
-    def _get_sprite_for(self, e: Entity, spr_id):
+    def _get_or_make_spr3d(self, spr_id, layer=spriteref.LAYER_3D, idx=0):
+        if spr_id in self._sprite_3ds:
+            sprs = self._sprite_3ds[spr_id]
+            if idx < len(sprs):
+                return sprs[idx]
+        return threedee.Sprite3D(layer)
+
+    def _all_sprites_for(self, e: Entity, spr_id):
         x, z, y = e.get_xyz()  # 3d coordinates, z and y are swapped intentionally
         edir = e.get_direction()
         rot = -math.atan2(edir[1], edir[0]) + math.pi / 2
 
         if isinstance(e, Forklift):
-            if spr_id in self._sprite_3ds:
-                forklift_spr = self._sprite_3ds[spr_id]
-            else:
-                forklift_spr = threedee.Sprite3D(spriteref.ThreeDeeModels.FORKLIFT, spriteref.LAYER_3D)
+            forklift_spr = self._get_or_make_spr3d(spr_id)
 
             fork_pos = (0, e.get_fork_xyz(absolute=False)[2] / 8, 0)
             forklift_spr = forklift_spr.update(new_model=spriteref.ThreeDeeModels.FORKLIFT,
                                                new_position=(x + 0.5, y / 8 + 0.001, z + 0.5),
                                                new_rotation=(0, rot, 0)
                                                ).update_mesh("fork", new_pos=fork_pos)
-            return forklift_spr
+            yield forklift_spr
         elif isinstance(e, Block):
             # TODO hacks here covering up some issue w/ direction indices & models' base directions
             bb = e.copy().rotate(-e.get_direction_idx() + 1).get_bounding_box()
-            if spr_id in self._sprite_3ds:
-                spr = self._sprite_3ds[spr_id]
-            else:
-                spr = threedee.Sprite3D(spriteref.ThreeDeeModels.CUBE, spriteref.LAYER_3D)
+            spr = self._get_or_make_spr3d(spr_id)
             spr = spr.update(new_model=spriteref.ThreeDeeModels.CUBE,
                              new_position=(bb[0] + bb[3] / 2, bb[2] / 8, bb[1] + bb[4] / 2),
                              new_rotation=(0, rot, 0),
                              new_scale=(bb[3], bb[5] / 8, bb[4]),
-                             new_color=colorutils.to_float(e.get_debug_color()))
-            return spr
-        else:
-            return None
+                             new_color=colorutils.to_float(e.get_color()))
+            yield spr
+
+            if isinstance(e, WinBlock):
+                diam_spr = self._get_or_make_spr3d(spr_id, idx=1)
+                t = globaltimer.get_elapsed_time() / 1000
+                bob_y_offs = 6/8 + 0.1 * math.cos(t * 2 * math.pi)
+                rot_offs = t * 0.1 * 2 * math.pi
+                diam_spr = diam_spr.update(new_model=spriteref.ThreeDeeModels.DIAMOND,
+                                           new_rotation=(0, rot + rot_offs, 0),
+                                           new_position=(bb[0] + bb[3] / 2, (bb[2] + bb[5]) / 8 + bob_y_offs, bb[1] + bb[4] / 2),
+                                           new_scale=(0.25, 0.333, 0.25),
+                                           new_color=colorutils.to_float(e.get_color()))
+                yield diam_spr
 
     def update(self, w: World):
         super().update(w)
@@ -1160,7 +1205,7 @@ class WorldRenderer3D(WorldRenderer):
             z = w.terrain[t_xy]
             t_id = f"terr_{(x, y)}"
             if t_id not in self._sprite_3ds:
-                spr = threedee.Sprite3D(spriteref.ThreeDeeModels.SQUARE, spriteref.LAYER_3D)
+                spr = threedee.Sprite3D(spriteref.LAYER_3D, spriteref.ThreeDeeModels.SQUARE)
             else:
                 spr = self._sprite_3ds[t_id]
 
@@ -1179,21 +1224,28 @@ class WorldRenderer3D(WorldRenderer):
             old_ent, new_ent, t = self.get_cur_entity(e)
             if (old_ent is new_ent) or t == 0:
                 # not interpolating
-                spr = self._get_sprite_for(old_ent, old_ent.uid)
-                new_sprites[old_ent.uid] = spr
+                sprs = list(x for x in self._all_sprites_for(old_ent, old_ent.uid))
+                new_sprites[old_ent.uid] = sprs
             else:
                 old_spr_id = (old_ent.uid, 0)
                 new_spr_id = (new_ent.uid, 1)
-                old_spr = self._get_sprite_for(old_ent, old_spr_id)
-                new_spr = self._get_sprite_for(new_ent, new_spr_id)
+                old_sprs = list(x for x in self._all_sprites_for(old_ent, old_spr_id))
+                new_sprs = list(x for x in self._all_sprites_for(new_ent, new_spr_id))
 
-                spr = old_spr.interpolate(new_spr, t)
+                sprs = []
+                for old_spr, new_spr in zip(old_sprs, new_sprs):
+                    if old_spr is None and new_spr is not None:
+                        sprs.append(new_spr)
+                    elif old_spr is not None and new_spr is not None:
+                        sprs.append(old_spr.interpolate(new_spr, t))
+                    else:
+                        pass  # sprite is considered non-existant
 
-                new_sprites[old_spr_id] = old_spr
-                new_sprites[new_spr_id] = new_spr
-                new_sprites[e.uid] = spr
-            if isinstance(e, Forklift):
-                forklift_spr = spr
+                new_sprites[old_spr_id] = old_sprs
+                new_sprites[new_spr_id] = new_sprs
+                new_sprites[e.uid] = sprs
+            if isinstance(e, Forklift) and len(sprs) > 0:
+                forklift_spr = sprs[0]
 
         self._sprite_3ds = new_sprites
         for lay in renderengine.get_instance().get_layers(spriteref.world_3d_layer_ids()):
@@ -1214,13 +1266,25 @@ class WorldRenderer3D(WorldRenderer):
         if isinstance(ent_or_id, Entity):
             ent_or_id = ent_or_id.uid
         if ent_or_id in self._sprite_3ds:
-            return self._sprite_3ds[ent_or_id]
+            res = self._sprite_3ds[ent_or_id]
+            if isinstance(res, list):
+                if len(res) > 0:
+                    return res[0]
+                else:
+                    return None
+            else:
+                return res
         return None
 
     def all_sprites(self):
         for key in self._sprite_3ds:
             if not isinstance(key, tuple):  # tuples are the before & after sprites
-                yield self._sprite_3ds[key]
+                res = self._sprite_3ds[key]
+                if isinstance(res, sprites.AbstractSprite):
+                    yield res
+                else:
+                    for spr in res:
+                        yield spr
 
 
 if __name__ == "__main__":

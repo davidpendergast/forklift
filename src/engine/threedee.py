@@ -324,7 +324,7 @@ class ThreeDeeLayer(layers.ImageLayer):
 
 class Sprite3D(sprites.AbstractSprite):
 
-    def __init__(self, model: 'ThreeDeeModel', layer_id, position=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1),
+    def __init__(self, layer_id, model: 'ThreeDeeModel' = None, position=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1),
                  color=(1, 1, 1), mesh_xforms=None, uid=None):
         sprites.AbstractSprite.__init__(self, sprites.SpriteTypes.THREE_DEE, layer_id, uid=uid)
         self._model = model
@@ -426,7 +426,8 @@ class Sprite3D(sprites.AbstractSprite):
         return self._color
 
     def set_uniforms_for_mesh(self, mesh_name, engine, camera_pos, wireframe=False):
-        base_xform = self.model().get_xform(mesh_name)
+        model = self.model()
+        base_xform = model.get_xform(mesh_name) if model is not None else IDENTITY
         extra_xform = self.get_mesh_xform(name=mesh_name)
         sprite_xform = self.get_xform(camera_pos=camera_pos)
 
@@ -500,7 +501,7 @@ class Sprite3D(sprites.AbstractSprite):
         if not did_change and not force_new:
             return self
         else:
-            return Sprite3D(model, self.layer_id(), position=position, rotation=rotation,
+            return Sprite3D(self.layer_id(), model=model, position=position, rotation=rotation,
                             scale=scale, color=color, uid=self.uid())
 
     def interpolate(self, other: 'Sprite3D', t, force_new=False) -> 'Sprite3D':
@@ -527,9 +528,9 @@ class Sprite3D(sprites.AbstractSprite):
 
 class BillboardSprite3D(Sprite3D):
 
-    def __init__(self, model, layer_id, horz_billboard=True, vert_billboard=False,
+    def __init__(self, layer_id, model=None, horz_billboard=True, vert_billboard=False,
                  position=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1), color=(1, 1, 1), uid=None):
-        super().__init__(model, layer_id, position=position, rotation=rotation, scale=scale, color=color, uid=uid)
+        super().__init__(layer_id, model=model, position=position, rotation=rotation, scale=scale, color=color, uid=uid)
         self._horz_billboard = horz_billboard
         self._vert_billboard = vert_billboard
 
@@ -567,7 +568,7 @@ class BillboardSprite3D(Sprite3D):
                        res.color() != self.color())
 
         if did_change:
-            return BillboardSprite3D(res.model(), self.layer_id(),
+            return BillboardSprite3D(self.layer_id(), res.model(),
                                      horz_billboard=horz_billboard, vert_billboard=vert_billboard,
                                      position=res.position(), rotation=res.rotation(), scale=res.scale(),
                                      color=res.color(), uid=self.uid())
@@ -584,7 +585,10 @@ class ThreeDeeModel:
         self._model_id = model_id
 
     def __eq__(self, other):
-        return self.get_model_id() == other.get_model_id()
+        if other is None:
+            return False
+        else:
+            return self.get_model_id() == other.get_model_id()
 
     def __hash__(self):
         return hash(self.get_model_id())
@@ -746,7 +750,10 @@ class ThreeDeeMesh(ThreeDeeModel):
             indices[i] = self.get_indices()[i]
 
     def __eq__(self, other):
-        return self.get_mesh_id() == other.get_mesh_id()
+        if other is None:
+            return False
+        else:
+            return self.get_mesh_id() == other.get_mesh_id()
 
     def __hash__(self):
         return hash(self.get_mesh_id())
