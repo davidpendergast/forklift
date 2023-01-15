@@ -5,13 +5,85 @@
   *~~~~~~~~~~~~~~~~~~~~~~~~~~~~*
 
 Bugs:
-
-[X] blocks can be left stuck to the underside of other blocks
-[ ] when moving backwards off a 1-high block, if the fork is at z=0 it'll slip under the block 
-      - (should it raise 1 automatically?)
+  [X] blocks can be left stuck to the underside of other blocks
+  [ ] when moving backwards off a 1-high block, if the fork is at z=0 it'll slip under the block 
+      - it should either raise 1 unit automatically or prevent you from making the move, I think?
       
       
 Features:
- [ ] skybox
- [ ] win conditions for levels
- [ ] add some girth to the floor
+  Rendering:
+    [ ] skybox
+    [ ] add some girth to the floor
+  Gameplay:
+    [ ] undo and redo
+    [ ] win conditions for levels
+      - reach block?
+      - move 
+ 
+ 
+ 
+
+Architecture Notes:
+    
+    The basic gameplay is extremely discrete - all movement occurs in a grid.
+    The game is a sequence of gamestates, with each new gamestate resulting from a player action.
+    Undo / redo is therefore simply moving backwards or forward to a new gamestate in the chain.
+    
+    Entities: 
+      Represent objects in the gamestate, and are (ideally) comepletely decoupled from rendering.
+      Are copied when changed.
+    
+    The render engine is responsible for rendering the current gamestate and interpolating between
+      two gamestates to show motion. This places considerable complexity onto the shoulders of the
+      rendering engine. 
+      
+      Those responsibilities include:
+        - Tracking the state of every entity in the scene across gamestates.
+        - Animating any changes (including difficult or bizarre ones).
+        
+      Questions:
+        a. Where do we store entity-specific state that is related to rendering? 
+           - Such as the sprites, animation timers, etc.
+        b. Where do we define entity-specific rendering logic (such as an entity with an idle animation).
+        c. How do we define rendering logic that involves more than one entity?
+        d. How can gamestate events trigger rendering effects? 
+           - e.g. a box gets destroyed, wants to spawn an explosion effect).
+           - or a gamestate event triggering a permanent change in an entity's animation
+             state, e.g. a light turning on, or an idle animation starting.
+    
+      1. Encapsulating all gamestate changes into a "WorldMutation" object makes a lot of sense. 
+         While interpolating between two gamestates, the render engine can use this object to 
+         determine which entities changed, and how. 
+      
+         This can also solve (d), by including messages (e.g. "explosion happened here at t=0.9") 
+           to the mutation object.
+           - Or just spawn entites to represent one-off effects. These would get removed the
+             following step. (What if they need to outlast the next step? Such as an explosion).
+           
+      2a. Entities could create and pass "AnimationControllers" to the render engine.
+         
+         These would come in several flavors:
+           - Single use controllers that only apply to the current gamestate interpolation.
+               e.g. a BasicMotionController, SpecialAnimationController, ColorPurturbationController
+               - Multiple of these could be registered for an entity at the same time.
+           - Persistent controllers
+           - One-off Animation controllers that are based on time, not gamestate transitions.
+           ...
+           Hmm sounds a bit gnarly.
+           
+      2b. Entities could update (but not store) their own animation state info.
+         - or just update the sprites directly.
+         - this would make it simple to implement passive animation effects.
+         - most entities likely don't need to reach in and modify their sprites though,
+           so this would be somewhat wasteful.
+         - why not just store it too if you're going to all this trouble anyways.
+            - would it get copied between different timepoints of the same entity?
+            - they could just share a ref to the same state
+ 
+Resources:
+  Architecting a 3D Animation Engine
+  https://www.gamedeveloper.com/programming/architecting-a-3d-animation-engine
+  
+  
+  
+  
