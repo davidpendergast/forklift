@@ -29,6 +29,7 @@ class TextureSheetTypes:
     RAINBOW = util.add_to_list(("rainbow", "assets/models/rainbow.png"), ALL_TYPES)
     WHITE = util.add_to_list(("white", "assets/models/white.png"), ALL_TYPES)
     FORKLIFT_DEFAULT = util.add_to_list(("forklift_default", "assets/models/forklift_default.png"), ALL_TYPES)
+    SKYBOX = util.add_to_list(("skybox", "assets/models/skybox.png"), ALL_TYPES)
 
 
 class ThreeDeeModels:
@@ -40,6 +41,7 @@ class ThreeDeeModels:
     WEDGE = None
     CYLINDER = None
     DIAMOND = None
+    SKYBOX = None
 
     _2D_MODEL_CACHE = {}  # ImageModel -> ThreeDeeModel
 
@@ -96,6 +98,11 @@ class ThreeDeeModels:
 
         # model is 1x1x1-ish, origin is at the center
         ThreeDeeModels.DIAMOND = TDM.load_from_disk("diamond", s("assets/models/diamond.obj"), tex_xform("white"))
+
+        # model is 1x1x1, origin is at center
+        ThreeDeeModels.SKYBOX = TDM.load_from_disk("skybox", s("assets/models/inverted_textured_cube.obj"), tex_xform("skybox")) \
+            .apply_scaling((4, 4, 4)) \
+            .apply_translation((-0.5, -0.5, -0.5))
 
     @staticmethod
     def from_2d_model(model_2d):

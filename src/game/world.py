@@ -1151,6 +1151,7 @@ class WorldRenderer3D(WorldRenderer):
         super().__init__()
         self._sprite_3ds = {}  # uid -> list of Sprite3D
         self.camera = threedee.Camera3D(position=(-3.8, 3.2, 2.5), direction=(0.9, -0.4, 0), fov=45)
+        self.skybox_sprite = None
 
     def _get_or_make_spr3d(self, spr_id, layer=spriteref.LAYER_3D, idx=0):
         if spr_id in self._sprite_3ds:
@@ -1252,6 +1253,14 @@ class WorldRenderer3D(WorldRenderer):
             if forklift_spr is not None:
                 lay.set_light_sources([(util.add(forklift_spr.position(), (0, 2, 0)),
                                         colorutils.lighter(forklift_spr.color(), 0.7))])
+
+        if self.skybox_sprite is None:
+            self.skybox_sprite = threedee.Sprite3D(spriteref.LAYER_3D, model=spriteref.ThreeDeeModels.SKYBOX)
+        self.skybox_sprite = self.skybox_sprite.update(
+                new_scale=(50, 50, 50),
+                new_position=forklift_spr.position() if forklift_spr is not None else None
+        )
+
         self.update_camera()
 
     def update_camera(self, new_camera=None):
@@ -1285,6 +1294,8 @@ class WorldRenderer3D(WorldRenderer):
                 else:
                     for spr in res:
                         yield spr
+        if self.skybox_sprite is not None:
+            yield self.skybox_sprite
 
 
 if __name__ == "__main__":
