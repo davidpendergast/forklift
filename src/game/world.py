@@ -1219,6 +1219,22 @@ class WorldRenderer3D(WorldRenderer):
                              new_color=color)
             new_sprites[t_id] = spr
 
+            for i, dxy in enumerate([(-1, 0), (0, -1), (1, 0), (0, 1)]):
+                xy2 = (x + dxy[0], y + dxy[1])
+                if xy2 not in w.terrain or w.terrain[xy2] < z:
+                    t_id2 = f"{t_id}_({dxy})"
+                    if t_id2 not in self._sprite_3ds:
+                        spr2 = threedee.Sprite3D(spriteref.LAYER_3D, spriteref.ThreeDeeModels.SQUARE)
+                    else:
+                        spr2 = self._sprite_3ds[t_id2]
+                    h = 100
+                    spr2 = spr2.update(new_model=spriteref.ThreeDeeModels.SQUARE,
+                                       new_position=(x + 0.5 + dxy[0] / 2, z / 8 - h / 2 + 0.01, y + 0.5 + dxy[1] / 2),
+                                       new_scale=(1, 1, h),
+                                       new_rotation=(math.pi / 2, (-i + 1) * math.pi / 2, 0),
+                                       new_color=color)
+                    new_sprites[t_id2] = spr2
+
         forklift_spr = None
 
         for e in w.all_entities():
@@ -1240,7 +1256,7 @@ class WorldRenderer3D(WorldRenderer):
                     elif old_spr is not None and new_spr is not None:
                         sprs.append(old_spr.interpolate(new_spr, t))
                     else:
-                        pass  # sprite is considered non-existant
+                        pass  # sprite is considered non-existent
 
                 new_sprites[old_spr_id] = old_sprs
                 new_sprites[new_spr_id] = new_sprs
@@ -1251,7 +1267,10 @@ class WorldRenderer3D(WorldRenderer):
         self._sprite_3ds = new_sprites
         for lay in renderengine.get_instance().get_layers(spriteref.world_3d_layer_ids()):
             if forklift_spr is not None:
-                lay.set_light_sources([(util.add(forklift_spr.position(), (0, 2, 0)),
+                yrot = forklift_spr.rotation()[1]
+                offs_dir = math.cos(-yrot + math.pi / 2), math.sin(-yrot + math.pi / 2)
+                offs = 0.666
+                lay.set_light_sources([(util.add(forklift_spr.position(), (offs * offs_dir[0], 1.333, offs * offs_dir[1])),
                                         colorutils.lighter(forklift_spr.color(), 0.7))])
 
         if self.skybox_sprite is None:
