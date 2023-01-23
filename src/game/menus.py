@@ -192,18 +192,20 @@ class InGameScene(scenes.Scene):
             yfov = renderer.camera.get_fov()
             xfov = yfov * screen_size[0] / max(screen_size[1], 1)
 
+            key_mod = 0.666 if inputs.get_instance().shift_is_held() else 1
+
             drag_xy = inputs.get_instance().mouse_drag_delta_this_frame(button=1) or (0, 0)
 
             rot_keyinput = inputs.get_instance().is_held_two_way(negative=configs.ROTATE_LEFT, positive=configs.ROTATE_RIGHT)
             dtheta_keys = globaltimer.dt() / 1000 * rot_keyinput * 90 * math.pi / 180
             dtheta_mouse = (drag_xy[0] / screen_size[0]) * xfov * math.pi / 180 * configs.mouse_camera_sensitivity_x
-            self.camera_theta += dtheta_keys + dtheta_mouse
+            self.camera_theta += dtheta_keys * key_mod + dtheta_mouse
 
             zoom_keyinput = inputs.get_instance().is_held_two_way(negative=configs.ROTATE_UP, positive=configs.ROTATE_DOWN)
             dzoom_keys = zoom_keyinput * globaltimer.dt() / 1000 * 1
             dzoom_mouse = (drag_xy[1] / screen_size[1]) * yfov * math.pi / 180 * configs.mouse_camera_sensitivity_y
             dzoom_scroll = inputs.get_instance().get_mouse_scroll_this_frame()[1]
-            self.camera_dist = util.bound(self.camera_dist + dzoom_keys + dzoom_mouse - dzoom_scroll / 5, 0.5, 3)
+            self.camera_dist = util.bound(self.camera_dist + dzoom_keys * key_mod + dzoom_mouse - dzoom_scroll / 5, 0.5, 3)
 
             flift_spr = renderer.get_sprite_for_ent(self.world_state.get_forklift())
             if flift_spr is not None:
@@ -254,11 +256,12 @@ class InGameScene(scenes.Scene):
 
             df = inputs.get_instance().was_pressed_two_way(negative=configs.CROUCH, positive=configs.JUMP)
             if df == 0 and inputs.get_instance().is_held_two_way(negative=configs.CROUCH, positive=configs.JUMP) != 0:
-                # XXX these vals use frames, not seconds, which feels bad at low fps
-                delay, freq = 2, 6
-                if inputs.get_instance().was_pressed_or_held_and_repeated(configs.JUMP, delay=delay, freq=freq):
+                delay, freq = 2 / 60 * 1000, 6 / 60 * 1000
+                if inputs.get_instance().was_pressed_or_held_and_repeated(
+                        configs.JUMP, delay=delay, freq=freq, use_ms=True):
                     df = 1
-                elif inputs.get_instance().was_pressed_or_held_and_repeated(configs.CROUCH, delay=delay, freq=freq):
+                elif inputs.get_instance().was_pressed_or_held_and_repeated(
+                        configs.CROUCH, delay=delay, freq=freq, use_ms=True):
                     df = -1
             if df != 0:
                 mut = world.ForkliftActionHandler.move_fork(self.world_state.get_forklift(), df, self.world_state)

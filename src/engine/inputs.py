@@ -25,10 +25,12 @@ def get_instance() -> 'InputState':
 class InputState:
 
     def __init__(self):
-        self._current_time = 0
+        self._current_time = (0, 0)     # tick, global_elapsed_ms
+        self._last_dt = 0
+
         self._pressed_this_frame = {}   # keycode -> num times
         self._released_this_frame = {}  # keycode -> num times
-        self._held_keys = {}            # keycode -> time pressed
+        self._held_keys = {}            # keycode -> (tick, global_elapsed_ms)
 
         self._ascii_pressed_this_frame = []  # list of ascii chars typed this frame
 
@@ -36,7 +38,7 @@ class InputState:
         self._mouse_pos = (0, 0)
 
         # to track mouse drags
-        self._mouse_down_pos = {}  # mouse code -> (x, y, tick_pressed)
+        self._mouse_down_pos = {}  # mouse code -> (x, y, tick)
         self._end_drags_when_mouse_leaves_window = False  # configurable
     
     def set_key(self, key, held, ascii_val=''):
@@ -66,7 +68,7 @@ class InputState:
 
         m_pos = self.mouse_pos() if self.mouse_in_window() else (-1, -1)
         if down:
-            self._mouse_down_pos[keycode] = (m_pos[0], m_pos[1], self._current_time)
+            self._mouse_down_pos[keycode] = (m_pos[0], m_pos[1], self._current_time[0])
         else:
             if keycode in self._mouse_down_pos:
                 del self._mouse_down_pos[keycode]
@@ -76,7 +78,7 @@ class InputState:
             # update any mouse downs that also happened this frame
             for k in self._mouse_down_pos:
                 x, y, tick = self._mouse_down_pos[k]
-                if tick == self._current_time:
+                if tick == self._current_time[0]:
                     self._mouse_down_pos[k] = (pos[0], pos[1], tick)
 
         self._mouse_pos = pos
@@ -95,20 +97,37 @@ class InputState:
         else:
             raise ValueError("Unrecognized key type: {}".format(key))
     
-    def time_held(self, key):
+    def frames_held(self, key):
         """:param key - Binding, single key, or list of keys"""
         if isinstance(key, list) or isinstance(key, tuple):
-            return max(map(lambda k: self.time_held(k), key))
+            return max(map(lambda k: self.frames_held(k), key))
         elif isinstance(key, keybinds.Binding):
-            return key.time_held(self)
+            return key.frames_held(self)
         elif isinstance(key, int) or (isinstance(key, str) and key.startswith("MOUSE_BUTTON")):
             if key not in self._held_keys:
                 return -1
             else:
-                return self._current_time - self._held_keys[key]
+                return self._current_time[0] - self._held_keys[key][0]
         elif isinstance(key, str):
             binding = keybinds.get_instance().get_binding_or_none(key)
-            return binding is not None and binding.time_held(self)
+            return binding is not None and binding.frames_held(self)
+        else:
+            raise ValueError("Unrecognized key type: {}".format(key))
+
+    def time_held_ms(self, key):
+        """:param key - Binding, single key, or list of keys"""
+        if isinstance(key, list) or isinstance(key, tuple):
+            return max(map(lambda k: self.time_held_ms(k), key))
+        elif isinstance(key, keybinds.Binding):
+            return key.time_held_ms(self)
+        elif isinstance(key, int) or (isinstance(key, str) and key.startswith("MOUSE_BUTTON")):
+            if key not in self._held_keys:
+                return -1
+            else:
+                return self._current_time[1] - self._held_keys[key][1]
+        elif isinstance(key, str):
+            binding = keybinds.get_instance().get_binding_or_none(key)
+            return binding is not None and binding.time_held_ms(self)
         else:
             raise ValueError("Unrecognized key type: {}".format(key))
 
@@ -147,12 +166,24 @@ class InputState:
         else:
             raise ValueError("Unrecognized key type: {}".format(key))
 
-    def was_pressed_or_held_and_repeated(self, key, delay=configs.key_repeat_delay, freq=configs.key_repeat_period):
+    def was_pressed_or_held_and_repeated(self, key, delay=None, freq=None, use_ms=False):
         if self.was_pressed(key):
             return True
         elif self.is_held(key):
-            held_time = self.time_held(key)
-            return held_time > delay and (held_time - delay) % freq == 0
+            if delay is None:
+                delay = configs.key_repeat_delay_ms if use_ms else configs.key_repeat_delay_frames
+            if freq is None:
+                freq = configs.key_repeat_period_ms if use_ms else configs.key_repeat_period_frames
+            if use_ms:
+                held_time_ms = self.time_held_ms(key)
+                t = held_time_ms - delay
+                cur_activation_cnt = t // freq
+                last_activation_cnt = (t - self._last_dt) // freq
+                return cur_activation_cnt > 0 and cur_activation_cnt > last_activation_cnt
+            else:
+                held_frames = self.frames_held(key)
+                return held_frames > delay and (held_frames - delay) % freq == 0
+
         else:
             return False
 
@@ -197,7 +228,7 @@ class InputState:
     
     def mouse_held_time(self, button=1):
         keycode = self.to_key_code(button)
-        return self.time_held(keycode)
+        return self.frames_held(keycode)
 
     def mouse_was_pressed(self, button=1):
         """
@@ -289,7 +320,8 @@ class InputState:
         Relies on globaltimer.tick_count().
         Remember that this gets called *after* inputs are passed in, and *before* game updates occur.
         """
-        self._current_time = globaltimer.tick_count()
+        self._current_time = (globaltimer.tick_count(), globaltimer.get_elapsed_time())
+        self._last_dt = globaltimer.dt()
 
         if self._end_drags_when_mouse_leaves_window and not self.mouse_in_window():
             self._mouse_down_pos.clear()

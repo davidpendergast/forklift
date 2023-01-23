@@ -258,13 +258,24 @@ class Binding:
 
             return len(keys_released) + len(mods_released) > 0
 
-    def time_held(self, input_state):
-        min_time = input_state.time_held(self.keycode)
+    def frames_held(self, input_state):
+        min_time = input_state.frames_held(self.keycode)
         if min_time < 0:
             return min_time
         else:
             for m in self.mods:
-                min_time = min(min_time, input_state.time_held(modifier_to_keys(m)))
+                min_time = min(min_time, input_state.frames_held(modifier_to_keys(m)))
+                if min_time < 0:
+                    return min_time
+        return min_time
+
+    def time_held_ms(self, input_state):
+        min_time = input_state.time_held_ms(self.keycode)
+        if min_time < 0:
+            return min_time
+        else:
+            for m in self.mods:
+                min_time = min(min_time, input_state.time_held_ms(modifier_to_keys(m)))
                 if min_time < 0:
                     return min_time
         return min_time

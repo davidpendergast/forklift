@@ -41,8 +41,11 @@ do_crash_reporting = True  # whether to produce a crash file when the program ex
 
 is_dev = os.path.exists(".gitignore")  # yikes
 
-key_repeat_delay = 30  # keys held for longer than this many ticks will start to be typed repeatedly
-key_repeat_period = 5  # after the delay has passed, the key will be typed every X ticks until released
+key_repeat_delay_frames = 30  # keys held for more frames than this many ticks will start to be typed repeatedly
+key_repeat_period_frames = 5  # after the delay has passed, the key will be typed every X ticks until released
+
+key_repeat_delay_ms = key_repeat_delay_frames / target_fps * 1000
+key_repeat_period_ms = key_repeat_period_frames / target_fps * 1000
 
 
 """ Keybinds """
