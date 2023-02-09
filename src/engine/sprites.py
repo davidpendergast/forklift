@@ -414,7 +414,11 @@ class ImageModel:
 
     def uid(self):
         return self._uid
-        
+
+    def to_atlas_coords(self, txy):
+        return (util.linear_interp(self.tx1, self.tx2, txy[0]),
+                util.linear_interp(self.ty1, self.ty2, txy[1]),)
+
     def __repr__(self):
         return "ImageModel({}, {}, {}, {})".format(self.x, self.y, self.w, self.h)
 

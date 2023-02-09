@@ -67,6 +67,7 @@ ROTATE_DOWN = "rot_down"
 
 DEBUG_TOGGLE_WIREFRAME = "toggle_wireframe"
 DEBUG_TOGGLE_TEXTURES = "toggle_textures"
+DEBUG_TOGGLE_RAINBOW = "toggle_rainbow"
 DEBUG_INCREASE_CAMERA_FOV = "increase_fov"
 DEBUG_DECREASE_CAMERA_FOV = "decrease_fov"
 DEBUG_TOGGLE_FREE_CAMERA = "toggle_freecam"

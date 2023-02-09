@@ -1,3 +1,5 @@
+import typing
+
 import pygame
 import traceback
 
@@ -24,14 +26,28 @@ def get_instance() -> 'SpriteAtlas':
 
 class SpriteSheet:
 
-    def __init__(self, sheet_id, filepath):
+    def __init__(self, sheet_id, filepath, translucent=False):
         self._sheet_id = sheet_id
         self._filepath = filepath
+
+        self._img = None
+        self._translucent = translucent
+
+        self._atlas = None  # set by atlas when sheet is added to it
 
     def get_sheet_id(self):
         return self._sheet_id
 
-    def get_draw_order(self):
+    def get_filepath(self) -> str:
+        return self._filepath
+
+    def get_img(self) -> sprites.ImageModel:
+        return self._img
+
+    def get_atlas(self) -> 'SpriteAtlas':
+        return self._atlas
+
+    def get_draw_order(self) -> int:
         """
         sheets with a lower draw order will be drawn first. if one sheet relies on the
         sprites of another, it must return a higher number here to ensure it'll have
@@ -39,19 +55,18 @@ class SpriteSheet:
         """
         return 0
 
-    def get_filepath(self):
-        return self._filepath
-
-    def get_size(self, img_size):
+    def get_size(self, img_size) -> typing.Tuple[int, int]:
         """
         sheets can override this to provide extra space for generated sprites.
-        :param img_size: the size of the sheet's image on disk.
+        img_size: the size of the sheet's image on disk.
         """
         return img_size
 
     def draw_to_atlas(self, atlas, sheet, start_pos=(0, 0)):
-        if atlas is not None and sheet is not None:
-            atlas.blit(sheet, start_pos)
+        atlas.blit(sheet, start_pos)
+
+        self._img = sprites.ImageModel(0, 0, sheet.get_width(), sheet.get_height(),
+                                       offset=start_pos, translucent=self._translucent)
 
 
 class FontCharacterSpriteLookup:
@@ -100,7 +115,7 @@ class DefaultFontMono(FontSheet):
     SHEET_ID = "default_font_mono"
 
     def __init__(self, font_id=None):
-        FontSheet.__init__(self, DefaultFontMono.SHEET_ID if font_id is None else font_id, "assets/font.png")
+        FontSheet.__init__(self, DefaultFontMono.SHEET_ID if font_id is None else font_id, "assets/default/font.png")
 
         self.set_swap_chars({
             "→": chr(16),
@@ -151,7 +166,7 @@ class DefaultFontSmall(FontSheet):
     SHEET_ID = "font_small"
 
     def __init__(self):
-        FontSheet.__init__(self, DefaultFontSmall.SHEET_ID, "assets/font_small.png")
+        FontSheet.__init__(self, DefaultFontSmall.SHEET_ID, "assets/default/font_small.png")
 
         self.set_swap_chars({
             "→": chr(16),
@@ -217,24 +232,11 @@ def get_white_square_img(opacity=1.0):
     return get_instance().get_sheet(WhiteSquare.SHEET_ID).get_sprite(opacity=opacity)
 
 
-class SingleImageSheet(SpriteSheet):
+_RAINBOW_SHEET_ID = "rainbow"
 
-    def __init__(self, filepath, translucent=False):
-        SpriteSheet.__init__(self, filepath, filepath)
-        self._img = None
-        self._translucent = translucent
 
-    def get_size(self, img_size):
-        return img_size
-
-    def get_img(self):
-        return self._img
-
-    def draw_to_atlas(self, atlas, sheet, start_pos=(0, 0)):
-        super().draw_to_atlas(atlas, sheet, start_pos=start_pos)
-
-        self._img = sprites.ImageModel(0, 0, sheet.get_width(), sheet.get_height(),
-                                       offset=start_pos, translucent=self._translucent)
+def get_rainbow_img():
+    return get_instance().get_sheet(_RAINBOW_SHEET_ID).get_img()
 
 
 def get_default_font(mono=False, small=False) -> FontSheet:
@@ -259,24 +261,58 @@ class SpriteAtlas:
 
     def __init__(self):
         self._sheets = {}  # sheet_id -> SpriteSheet
+        self._sheet_rects = {}  # sheet_id -> rect
 
         # some "built-in" sheets
         self.add_sheet(DefaultFont())
         self.add_sheet(DefaultFontMono())
         self.add_sheet(DefaultFontSmall())
-
         self.add_sheet(WhiteSquare())
+        self.add_sheet(SpriteSheet(_RAINBOW_SHEET_ID, "assets/default/rainbow.png"))
+
+        self._atlas_surface: pygame.Surface = None
 
     def add_sheet(self, sheet):
         self._sheets[sheet.get_sheet_id()] = sheet
+        sheet._atlas = self
 
     def get_sheet(self, sheet_id) -> SpriteSheet:
         if sheet_id in self._sheets:
             return self._sheets[sheet_id]
         else:
+            raise ValueError(f"No sheet in atlas with id: {sheet_id}")
+
+    def get_rect(self, sheet_id):
+        if sheet_id in self._sheet_rects:
+            return self._sheet_rects[sheet_id]
+        else:
             return None
 
-    def create_atlas_surface(self):
+    def to_atlas_texture_coord(self, sheet_id, sheet_tx_coord):
+        """
+        Converts xy texture coordinates (from 0.0 to 1.0) within a sheet to the corresponding texture coordinates
+        in the atlas. Cannot be called before create_atlas_surface.
+        """
+        sheet_rect = self.get_rect(sheet_id)
+        if sheet_rect is None:
+            return (0, 0)
+        atlas_rect = self._atlas_surface.get_rect()
+        tx = util.linear_interp(sheet_rect[0], sheet_rect[0] + sheet_rect[2], sheet_tx_coord[0]) / atlas_rect[2]
+        ty = util.linear_interp(sheet_rect[1], sheet_rect[1] + sheet_rect[3], sheet_tx_coord[1]) / atlas_rect[3]
+        return (tx, ty)
+
+    def to_atlas_pixel_coord(self, sheet_id, sheet_px_coord):
+        """
+        Converts xy pixel coordinates (from 0 to sheet dim - 1) within a sheet to the corresponding pixel coordinates
+        in the atlas. Cannot be called before create_atlas_surface.
+        """
+        sheet_rect = self.get_rect(sheet_id)
+        if sheet_rect is None:
+            return (0, 0)
+        return (sheet_rect[0] + sheet_px_coord[0],
+                sheet_rect[1] + sheet_px_coord[1])
+
+    def create_atlas_surface(self) -> pygame.Surface:
         print("INFO: creating sprite atlas for {} sheets: [{}]".format(
             len(self._sheets), ", ".join([s_id for s_id in self._sheets])))
 
@@ -341,16 +377,21 @@ class SpriteAtlas:
         atlas_surface = pygame.Surface(atlas_size, pygame.SRCALPHA, 32)
         atlas_surface.fill((255, 255, 255, 0))
 
+        self._sheet_rects.clear()
+
         for s_id in all_sheets:
             pos = positions[s_id]
             img = loaded_images[s_id]
             size = sizes[s_id]
-            print("INFO:   drawing {} [{}x{}] to ({}, {})".format(s_id, size[0], size[1], pos[0], pos[1]))
+            rect = (pos[0], pos[1], size[0], size[1])
+            print("INFO:   drawing {} to rect {}".format(s_id, rect))
+            self._sheet_rects[s_id] = rect
             self._sheets[s_id].draw_to_atlas(atlas_surface, img, start_pos=pos)
 
-        sprites.CURRENT_ATLAS_SIZE = None  # clean it up for good measure ~
+        sprites._CURRENT_ATLAS_SIZE = None  # clean it up for good measure ~
 
-        return atlas_surface
+        self._atlas_surface = atlas_surface
+        return self._atlas_surface
 
 
 

@@ -29,12 +29,13 @@ def _build_demo_sprites():
         x, y = t_xy
         z = w.terrain[t_xy]
         res.append(threedee.Sprite3D(spriteref.LAYER_3D, spriteref.ThreeDeeModels.SQUARE,
-                                     (x, z, y), color=(0.15, 0.15, 0.15), scale=(sc, sc, sc)))  # coordinates man
+                                     position=(x, z, y), color=(0.15, 0.15, 0.15), scale=(sc, sc, sc)))
 
     for e in w.all_entities():
         if isinstance(e, world.Forklift):  # need the forklift to be first for lock-on
             x, z, y = e.xyz
             res.append(threedee.Sprite3D(spriteref.LAYER_3D, spriteref.ThreeDeeModels.FORKLIFT_STATIC,
+                                         spriteref.ThreeDeeTextureSheets.FORKLIFT.get_img(),
                                          position=(x + 0.5, y / 8 + 0.001, z + 0.5),
                                          scale=(0.1, 0.1, 0.1),
                                          rotation=(0, 0, 0)))
@@ -227,6 +228,8 @@ class InGameScene(scenes.Scene):
                     layer3d.set_use_perspective(not layer3d.use_perspective)
                 if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_TEXTURES):
                     layer3d.set_show_textures(not layer3d.show_textures)
+                if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_RAINBOW):
+                    layer3d.set_rainbow_mode(not layer3d.rainbow_mode)
                 if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_WIREFRAME):
                     layer3d.set_show_wireframe(not layer3d.show_wireframe)
                 if inputs.get_instance().was_pressed(configs.DEBUG_TOGGLE_LIGHTING):

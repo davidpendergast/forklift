@@ -1170,6 +1170,7 @@ class WorldRenderer3D(WorldRenderer):
 
             fork_pos = (0, e.get_fork_xyz(absolute=False)[2] / 8, 0)
             forklift_spr = forklift_spr.update(new_model=spriteref.ThreeDeeModels.FORKLIFT,
+                                               new_texture=spriteref.ThreeDeeTextureSheets.FORKLIFT.get_img(),
                                                new_position=(x + 0.5, y / 8 + 0.001, z + 0.5),
                                                new_rotation=(0, rot, 0)
                                                ).update_mesh("fork", new_pos=fork_pos)
@@ -1274,7 +1275,9 @@ class WorldRenderer3D(WorldRenderer):
                                         colorutils.lighter(forklift_spr.color(), 0.7))])
 
         if self.skybox_sprite is None:
-            self.skybox_sprite = threedee.Sprite3D(spriteref.LAYER_3D, model=spriteref.ThreeDeeModels.SKYBOX)
+            self.skybox_sprite = threedee.Sprite3D(spriteref.LAYER_3D,
+                                                   model=spriteref.ThreeDeeModels.SKYBOX,
+                                                   texture=spriteref.ThreeDeeTextureSheets.SKYBOX_GREEN.get_img())
         self.skybox_sprite = self.skybox_sprite.update(
                 new_scale=(50, 50, 50),
                 new_position=forklift_spr.position() if forklift_spr is not None else None

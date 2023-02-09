@@ -11,7 +11,7 @@ import src.game.forklift
 The main entry point.
 """
 
-game_class = src.game.forklift.ForkliftGame  # <--- change this to your actual game class
+game_class = src.game.forklift.ForkliftGame
 
 
 def _dismiss_splash_screen():

@@ -16,7 +16,7 @@ import src.engine.keybinds as keybinds
 class DemoSheet(spritesheets.SpriteSheet):
 
     def __init__(self):
-        spritesheets.SpriteSheet.__init__(self, "demo_sheet", "assets/assets.png")
+        spritesheets.SpriteSheet.__init__(self, "demo_sheet", "assets/demo_assets.png")
 
         self.player_models = []
         self.tv_models = []

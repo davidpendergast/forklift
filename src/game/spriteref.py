@@ -21,15 +21,21 @@ def world_3d_layer_ids():
     return (LAYER_3D,)
 
 
+def _init_sheet(sheet_id, path, sheet_list):
+    return util.add_to_list(spritesheets.SpriteSheet(sheet_id, util.resource_path(path)), sheet_list)
+
+
+class CharacterSheet(spritesheets.SpriteSheet):
+    pass
+
+
 _3D_TEXTURES = {}  # sheet_id -> TextureSheet
 
 
-class TextureSheetTypes:
-    ALL_TYPES = []
-    RAINBOW = util.add_to_list(("rainbow", "assets/models/rainbow.png"), ALL_TYPES)
-    WHITE = util.add_to_list(("white", "assets/models/white.png"), ALL_TYPES)
-    FORKLIFT_DEFAULT = util.add_to_list(("forklift_default", "assets/models/forklift_default.png"), ALL_TYPES)
-    SKYBOX = util.add_to_list(("skybox", "assets/models/skybox.png"), ALL_TYPES)
+class ThreeDeeTextureSheets:
+    ALL_SHEETS = []
+    FORKLIFT = _init_sheet("forklift", "assets/models/forklift_default.png", ALL_SHEETS)
+    SKYBOX_GREEN = _init_sheet("skybox", "assets/models/skybox.png", ALL_SHEETS)
 
 
 class ThreeDeeModels:
@@ -46,61 +52,51 @@ class ThreeDeeModels:
     _2D_MODEL_CACHE = {}  # ImageModel -> ThreeDeeModel
 
     @staticmethod
-    def _get_xform_for_texture(texture_id):
-        if configs.rainbow_3d:
-            texture_id = "rainbow"
-        return lambda xy: _3D_TEXTURES[texture_id].get_xform_to_atlas()(xy)
-
-    @staticmethod
     def load_models_from_disk():
-        tex_xform = lambda ident: ThreeDeeModels._get_xform_for_texture(ident)
-        s = lambda path: util.resource_path(path)
-
         TDMM = threedee.ThreeDeeMultiMesh
         TDM = threedee.ThreeDeeMesh
 
         ThreeDeeModels.FORKLIFT = TDMM.load_from_disk(
-            "forklift", s("assets/models/forklift/"),
+            "forklift", util.resource_path("assets/models/forklift/"),
             {
                 "body": "body.obj",
                 "fork": "fork.obj",
                 "wheels": "wheels.obj"
-            }, tex_xform("forklift_default")
+            }
         ).apply_scaling((0.15, 0.15, 0.15))\
             .apply_translation((0, 0, 0.45))
 
         ThreeDeeModels.FORKLIFT_STATIC = TDM.load_from_disk(
             "forklift_static",
-            s("assets/models/forklift.obj"),
-            tex_xform("forklift_default")
+            util.resource_path("assets/models/forklift.obj")
         )
 
         # model is 1x0x1, origin is at center
-        ThreeDeeModels.SQUARE = TDM.load_from_disk("square", s("assets/models/square.obj"), tex_xform("white"))\
+        ThreeDeeModels.SQUARE = TDM.load_from_disk("square", util.resource_path("assets/models/square.obj"))\
             .apply_scaling((4, 4, 4))\
             .apply_translation((-0.5, 0, -0.5))
 
         # model is 1x1x1, origin is at center of bottom face
-        ThreeDeeModels.CUBE = TDM.load_from_disk("cube", s("assets/models/cube.obj"), tex_xform("white"))\
+        ThreeDeeModels.CUBE = TDM.load_from_disk("cube", util.resource_path("assets/models/cube.obj"))\
             .apply_scaling((4, 4, 4))\
             .apply_translation((-0.5, 0, -0.5))
 
         # model is 1x1x1, origin is at the center
-        ThreeDeeModels.SPHERE = TDM.load_from_disk("sphere", s("assets/models/sphere8.obj"), tex_xform("white"))
+        ThreeDeeModels.SPHERE = TDM.load_from_disk("sphere", util.resource_path("assets/models/sphere8.obj"))
 
         # model is 1x1x1, origin is at the center of bottom face, "wedge" goes upward in the positive y direction:
         #  / |  --> y
         # /__|
-        ThreeDeeModels.WEDGE = TDM.load_from_disk("wedge", s("assets/models/wedge.obj"), tex_xform("white"))
+        ThreeDeeModels.WEDGE = TDM.load_from_disk("wedge", util.resource_path("assets/models/wedge.obj"))
 
         # model is 1x1x1, origin is at the center of the bottom face
-        ThreeDeeModels.CYLINDER = TDM.load_from_disk("cylinder", s("assets/models/cylinder.obj"), tex_xform("white"))
+        ThreeDeeModels.CYLINDER = TDM.load_from_disk("cylinder", util.resource_path("assets/models/cylinder.obj"))
 
         # model is 1x1x1-ish, origin is at the center
-        ThreeDeeModels.DIAMOND = TDM.load_from_disk("diamond", s("assets/models/diamond.obj"), tex_xform("white"))
+        ThreeDeeModels.DIAMOND = TDM.load_from_disk("diamond", util.resource_path("assets/models/diamond.obj"))
 
         # model is 1x1x1, origin is at center
-        ThreeDeeModels.SKYBOX = TDM.load_from_disk("skybox", s("assets/models/inverted_textured_cube.obj"), tex_xform("skybox")) \
+        ThreeDeeModels.SKYBOX = TDM.load_from_disk("skybox", util.resource_path("assets/models/inverted_textured_cube.obj")) \
             .apply_scaling((4, 4, 4)) \
             .apply_translation((-0.5, -0.5, -0.5))
 
@@ -143,11 +139,7 @@ class TextureSheet(spritesheets.SpriteSheet):
 
 def initialize_sheets() -> typing.List[spritesheets.SpriteSheet]:
     all_sheets = []
-
-    for id_and_file in TextureSheetTypes.ALL_TYPES:
-        sheet_id, filepath = id_and_file
-        _3D_TEXTURES[sheet_id] = TextureSheet(sheet_id, filepath)
-        all_sheets.append(_3D_TEXTURES[sheet_id])
+    all_sheets.extend(ThreeDeeTextureSheets.ALL_SHEETS)
 
     ThreeDeeModels.load_models_from_disk()
 

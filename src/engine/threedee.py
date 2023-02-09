@@ -9,6 +9,7 @@ import math
 
 import src.engine.layers as layers
 import src.engine.sprites as sprites
+import src.engine.spritesheets as spritesheets
 import src.engine.inputs as inputs
 import src.utils.util as util
 import src.utils.matutils as matutils
@@ -158,6 +159,7 @@ class ThreeDeeLayer(layers.ImageLayer):
         self.use_perspective = True  # False for ortho
         self.show_textures = True
         self.show_wireframe = False
+        self.rainbow_mode = configs.rainbow_3d
 
         self.use_lighting = True
         self.ambient_lighting = (0.1, None)
@@ -175,6 +177,9 @@ class ThreeDeeLayer(layers.ImageLayer):
 
     def set_show_textures(self, val):
         self.show_textures = val
+
+    def set_rainbow_mode(self, val):
+        self.rainbow_mode = val
 
     def set_use_lighting(self, val):
         self.use_lighting = val
@@ -224,21 +229,29 @@ class ThreeDeeLayer(layers.ImageLayer):
         self._set_uniforms_for_scene(engine)
 
         # collect all meshes in the scene and their parent sprite
-        meshes_to_render: typing.Dict['ThreeDeeMesh', typing.Set[Sprite3D]] = {}  # mesh -> set of Sprite3D
+        meshes_to_render: typing.Dict[typing.Tuple['ThreeDeeMesh', sprites.ImageModel], typing.Set[Sprite3D]] = {}
 
         for sprite_id in self.opaque_images:
             spr_3d = engine.sprite_info_lookup[sprite_id].sprite
-            for mesh in spr_3d.model().all_unique_meshes():
-                if mesh not in meshes_to_render:
-                    meshes_to_render[mesh] = set()
-                meshes_to_render[mesh].add(spr_3d)
 
-        for mesh in meshes_to_render:
+            texture = spr_3d.texture()
+            if texture is None:
+                texture = spritesheets.get_white_square_img()
+            if self.rainbow_mode:
+                texture = spritesheets.get_rainbow_img()
+
+            for mesh in spr_3d.model().all_unique_meshes():
+                key = (mesh, texture)
+                if key not in meshes_to_render:
+                    meshes_to_render[key] = set()
+                meshes_to_render[key].add(spr_3d)
+
+        for (mesh, texture) in meshes_to_render:
             # only pass raw mesh data (vertices, normals, tex_coords, indices)
             # once per unique mesh in the scene
-            self._pass_attributes_for_mesh(engine, mesh)
+            self._pass_attributes_for_mesh(engine, mesh, texture)
 
-            for spr_3d in meshes_to_render[mesh]:
+            for spr_3d in meshes_to_render[(mesh, texture)]:
                 for mesh_name in spr_3d.model().all_names_for_mesh(mesh):
                     spr_3d.set_uniforms_for_mesh(mesh_name, engine, self.camera.get_position(), wireframe=wireframe)
                     indices = self.opaque_data_arrays.indices
@@ -308,14 +321,14 @@ class ThreeDeeLayer(layers.ImageLayer):
         engine.set_model_matrix(model)
         engine.set_global_color(spr_3d.color() if not wireframe else (0, 0, 0))
 
-    def _pass_attributes_for_mesh(self, engine, mesh_3d):
+    def _pass_attributes_for_mesh(self, engine, mesh_3d, texture):
         oda = self.opaque_data_arrays
         oda.vertices.resize(3 * len(mesh_3d.get_vertices()), refcheck=False)
         oda.normals.resize(3 * len(mesh_3d.get_normals()), refcheck=False)
-        oda.tex_coords.resize(2 * len(mesh_3d.get_texture_coords()), refcheck=False)
+        oda.tex_coords.resize(2 * len(mesh_3d.get_texture_coords(texture)), refcheck=False)
         oda.indices.resize(len(mesh_3d.get_indices()), refcheck=False)
 
-        mesh_3d.add_urself(oda.vertices, oda.normals, oda.tex_coords, oda.indices)
+        mesh_3d.add_urself(texture, oda.vertices, oda.normals, oda.tex_coords, oda.indices)
 
         engine.set_vertices(oda.vertices)
         engine.set_normals(oda.normals)
@@ -324,10 +337,12 @@ class ThreeDeeLayer(layers.ImageLayer):
 
 class Sprite3D(sprites.AbstractSprite):
 
-    def __init__(self, layer_id, model: 'ThreeDeeModel' = None, position=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1),
+    def __init__(self, layer_id, model: 'ThreeDeeModel' = None, texture: sprites.ImageModel = None,
+                 position=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1),
                  color=(1, 1, 1), mesh_xforms=None, uid=None):
         sprites.AbstractSprite.__init__(self, sprites.SpriteTypes.THREE_DEE, layer_id, uid=uid)
         self._model = model
+        self._texture = texture
 
         self._position = position   # location of the model's origin
         self._rotation = rotation   # rotation of the model in each plane w.r.t. the origin
@@ -339,6 +354,9 @@ class Sprite3D(sprites.AbstractSprite):
 
     def model(self) -> 'ThreeDeeModel':
         return self._model
+
+    def texture(self) -> sprites.ImageModel:
+        return self._texture
 
     @staticmethod
     def _calc_xform(pos=(0, 0, 0), scale=(1, 1, 1), rot=(0, 0, 0)):
@@ -434,7 +452,7 @@ class Sprite3D(sprites.AbstractSprite):
         engine.set_model_matrix(sprite_xform @ extra_xform @ base_xform)
         engine.set_global_color(self.color() if not wireframe else (0, 0, 0))
 
-    def update(self, new_model=None,
+    def update(self, new_model=None, new_texture=None,
                new_x=None, new_y=None, new_z=None, new_position=None,
                new_xrot=None, new_yrot=None, new_zrot=None, new_rotation=None,
                new_xscale=None, new_yscale=None, new_zscale=None, new_scale=None,
@@ -445,6 +463,11 @@ class Sprite3D(sprites.AbstractSprite):
         if new_model is not None and new_model != self._model:
             did_change = True
             model = new_model
+
+        texture = self._texture
+        if new_texture is not None and new_texture != self._texture:
+            did_change = True
+            texture = new_texture
 
         position = [v for v in self._position]
         if new_position is not None:
@@ -501,8 +524,9 @@ class Sprite3D(sprites.AbstractSprite):
         if not did_change and not force_new:
             return self
         else:
-            return Sprite3D(self.layer_id(), model=model, position=position, rotation=rotation,
-                            scale=scale, color=color, uid=self.uid())
+            return Sprite3D(self.layer_id(), model=model, texture=texture,
+                            position=position, rotation=rotation, scale=scale,
+                            color=color, uid=self.uid())
 
     def interpolate(self, other: 'Sprite3D', t, force_new=False) -> 'Sprite3D':
         func = util.linear_interp
@@ -681,26 +705,24 @@ class ThreeDeeMultiMesh(ThreeDeeModel):
             yield mesh
 
     @staticmethod
-    def load_from_disk(model_id, path_to_dir, mesh_name_mapping, map_from_texture_to_atlas) -> 'ThreeDeeMultiMesh':
+    def load_from_disk(model_id, path_to_dir, mesh_name_mapping) -> 'ThreeDeeMultiMesh':
         meshes = {}
         for mesh_name in mesh_name_mapping:
             filename = mesh_name_mapping[mesh_name]
             mesh_id = filename[:-4] + f"_({model_id})"
-            meshes[mesh_name] = ThreeDeeMesh.load_from_disk(mesh_id, os.path.join(path_to_dir, filename),
-                                                            map_from_texture_to_atlas)
+            meshes[mesh_name] = ThreeDeeMesh.load_from_disk(mesh_id, os.path.join(path_to_dir, filename))
         return ThreeDeeMultiMesh(model_id, meshes)
 
 
 class ThreeDeeMesh(ThreeDeeModel):
 
-    def __init__(self, mesh_id, vertices, normals, native_texture_coords, indices, map_from_texture_to_atlas=lambda xy: xy):
+    def __init__(self, mesh_id, vertices, normals, native_texture_coords, indices):
         """
         :param model_id: str
         :param vertices: list of (x, y, z)
         :param normals: list of (x, y, z)
         :param native_texture_coords: list of (x, y)
         :param indices: list of ints, one for each corner of each triangle
-        :param map_from_texture_to_atlas: converts points from native_texture_coords to actual atlas coordinates
         """
         super().__init__(mesh_id + "_(model)")
         self._mesh_id = mesh_id
@@ -710,10 +732,9 @@ class ThreeDeeMesh(ThreeDeeModel):
         self._native_texture_coords = native_texture_coords
         self._indices = indices
 
-        self._map_from_texture_to_atlas = map_from_texture_to_atlas
-        self._cached_atlas_coords = []  # list of (x, y)
-
         self._base_xform = IDENTITY
+
+        self._cached_atlas_coords = {}  # ImageModel -> list of xy
 
     def get_mesh_id(self):
         return self._mesh_id
@@ -727,10 +748,10 @@ class ThreeDeeMesh(ThreeDeeModel):
     def get_normals(self):
         return self._normals
 
-    def get_texture_coords(self):
-        if len(self._cached_atlas_coords) == 0:
-            self._cached_atlas_coords = [self._map_from_texture_to_atlas(xy) for xy in self._native_texture_coords]
-        return self._cached_atlas_coords
+    def get_texture_coords(self, texture: sprites.ImageModel):
+        if texture not in self._cached_atlas_coords:
+            self._cached_atlas_coords[texture] = [texture.to_atlas_coords(txy) for txy in self._native_texture_coords]
+        return self._cached_atlas_coords[texture]
 
     def apply_xform(self, xform, name='base') -> 'ThreeDeeMesh':
         self._base_xform = xform @ self._base_xform
@@ -739,13 +760,13 @@ class ThreeDeeMesh(ThreeDeeModel):
     def get_xform(self, name='base') -> numpy.ndarray:
         return self._base_xform
 
-    def add_urself(self, vertices, normals, tex_coords, indices):
+    def add_urself(self, texture: sprites.ImageModel, vertices, normals, tex_coords, indices):
         for i in range(0, 3 * len(self.get_vertices())):
             vertices[i] = self.get_vertices()[i // 3][i % 3]
         for i in range(0, 3 * len(self.get_normals())):
             normals[i] = self.get_normals()[i // 3][i % 3]
-        for i in range(0, 2 * len(self.get_texture_coords())):
-            tex_coords[i] = self.get_texture_coords()[i // 2][i % 2]
+        for i in range(0, 2 * len(self.get_texture_coords(texture))):
+            tex_coords[i] = self.get_texture_coords(texture)[i // 2][i % 2]
         for i in range(0, len(self.get_indices())):
             indices[i] = self.get_indices()[i]
 
@@ -771,7 +792,7 @@ class ThreeDeeMesh(ThreeDeeModel):
         yield self
 
     @staticmethod
-    def load_from_disk(model_id, mesh_path, map_from_texture_to_atlas):
+    def load_from_disk(model_id, mesh_path):
         try:
             raw_vertices = []
             raw_normals = []
@@ -824,8 +845,7 @@ class ThreeDeeMesh(ThreeDeeModel):
                     normals.append(norm_xyz)
                     indices.append(index)
             print("INFO: loaded model ({} faces): {}".format(len(triangle_faces), mesh_path))
-            return ThreeDeeMesh(model_id, vertices, normals, native_texture_coords, indices,
-                                map_from_texture_to_atlas=map_from_texture_to_atlas)
+            return ThreeDeeMesh(model_id, vertices, normals, native_texture_coords, indices)
         except IOError:
             print("ERROR: failed to load model: {}".format(mesh_path))
             return None

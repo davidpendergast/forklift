@@ -17,7 +17,7 @@ CACHED_TEXT = {}
 
 def get_text_surf(text, size, color):
     if size not in FONTS:
-        FONTS[size] = pygame.font.Font("assets/small_pixel.ttf", size)
+        FONTS[size] = pygame.font.Font("assets/default/small_pixel.ttf", size)
     color = pygame.Color(color)
     text_key = (text, size, color.r, color.g, color.b)
     if text_key not in CACHED_TEXT:
