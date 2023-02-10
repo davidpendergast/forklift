@@ -225,6 +225,15 @@ def rect_contains(rect, v_or_rect):
         return rect[0] <= v[0] < rect[0] + rect[2] and rect[1] <= v[1] < rect[1] + rect[3]
 
 
+def box_contains(box, v_or_box):
+    if len(v_or_box) == 6:
+        # TODO impl
+        raise NotImplementedError()
+    else:
+        return (rect_contains((box[0], box[1], box[3], box[4]), (v_or_box[0], v_or_box[1])) and  # XY
+                rect_contains((box[0], box[2], box[3], box[5]), (v_or_box[0], v_or_box[2])))     # XZ
+
+
 def constrain_point_to_rect(rect, p):
     px = bound(p[0], rect[0], rect[0] + rect[2] - 1)
     py = bound(p[1], rect[1], rect[1] + rect[3] - 1)
@@ -555,7 +564,11 @@ def smooth_interp(v1, v2, a):
 
 
 def round_vec(v):
-    return tuple([round(i) for i in v])
+    return xform_vec(v, round)
+
+
+def xform_vec(v, func=lambda x: x):
+    return tuple([func(i) for i in v])
 
 
 def sample_uniform(lower, upper):

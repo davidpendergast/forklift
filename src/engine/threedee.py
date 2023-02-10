@@ -552,9 +552,9 @@ class Sprite3D(sprites.AbstractSprite):
 
 class BillboardSprite3D(Sprite3D):
 
-    def __init__(self, layer_id, model=None, horz_billboard=True, vert_billboard=False,
+    def __init__(self, layer_id, model=None, texture=None, horz_billboard=True, vert_billboard=False,
                  position=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1), color=(1, 1, 1), uid=None):
-        super().__init__(layer_id, model=model, position=position, rotation=rotation, scale=scale, color=color, uid=uid)
+        super().__init__(layer_id, model=model, texture=texture, position=position, rotation=rotation, scale=scale, color=color, uid=uid)
         self._horz_billboard = horz_billboard
         self._vert_billboard = vert_billboard
 
@@ -565,12 +565,13 @@ class BillboardSprite3D(Sprite3D):
                                                                do_yaw=self._horz_billboard)
         return util.add(self.rotation(), rot_to_camera)
 
-    def update(self, new_model=None,
+    def update(self, new_model=None, new_texture=None,
                new_x=None, new_y=None, new_z=None, new_position=None,
                new_xrot=None, new_yrot=None, new_zrot=None, new_rotation=None,
                new_xscale=None, new_yscale=None, new_zscale=None, new_scale=None,
                new_color=None, new_horz_billboard=None, new_vert_billboard=None):  # XXX just ignore this i know it's bad
-        res = super().update(new_model, new_x=new_x, new_y=new_y, new_z=new_z, new_position=new_position,
+        res = super().update(new_model=new_model, new_texture=new_texture,
+                             new_x=new_x, new_y=new_y, new_z=new_z, new_position=new_position,
                              new_xrot=new_xrot, new_yrot=new_yrot, new_zrot=new_zrot, new_rotation=new_rotation,
                              new_xscale=new_xscale, new_yscale=new_yscale, new_zscale=new_zscale, new_scale=new_scale,
                              new_color=new_color)
@@ -586,13 +587,14 @@ class BillboardSprite3D(Sprite3D):
             did_change = True
 
         did_change |= (res.model() != self.model() or
+                       res.texture() != self.texture() or
                        res.position() != self.position() or
                        res.rotation() != self.rotation() or
                        res.scale() != self.scale() or
                        res.color() != self.color())
 
         if did_change:
-            return BillboardSprite3D(self.layer_id(), res.model(),
+            return BillboardSprite3D(self.layer_id(), res.model(), res.texture(),
                                      horz_billboard=horz_billboard, vert_billboard=vert_billboard,
                                      position=res.position(), rotation=res.rotation(), scale=res.scale(),
                                      color=res.color(), uid=self.uid())

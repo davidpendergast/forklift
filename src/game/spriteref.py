@@ -1,3 +1,4 @@
+import math
 import typing
 
 import configs
@@ -5,12 +6,13 @@ import src.utils.util as util
 
 import src.engine.threedee as threedee
 import src.engine.spritesheets as spritesheets
+import src.engine.sprites as sprites
 
 
-LAYER_3D = "threedee"
 LAYER_DEBUG = "debug"
-LAYER_POLY = "poly"
 LAYER_WORLD_2D = "world_2d"
+LAYER_POLY = "poly"
+LAYER_3D = "threedee"
 
 
 def world_2d_layer_ids():
@@ -25,8 +27,35 @@ def _init_sheet(sheet_id, path, sheet_list):
     return util.add_to_list(spritesheets.SpriteSheet(sheet_id, util.resource_path(path)), sheet_list)
 
 
-class CharacterSheet(spritesheets.SpriteSheet):
-    pass
+def _img(x, y, w, h, offs=(0, 0), trans=False, l=None) -> sprites.ImageModel:
+    res = sprites.ImageModel(x, y, w, h, offset=offs, translucent=trans)
+    if l is not None:
+        l.append(res)
+    return res
+
+
+class _CharacterSheet(spritesheets.SpriteSheet):
+
+    def __init__(self):
+        super().__init__("character_sheet", "assets/sprites.png")
+        self.skeletons = []
+        self.ghosts = []
+        self.vampires = []
+        self.tormented_souls = []
+        self.demons = []
+        self.maggots = []
+
+    def draw_to_atlas(self, atlas, sheet, start_pos=(0, 0)):
+        super().draw_to_atlas(atlas, sheet, start_pos=start_pos)
+        self.skeletons = [_img(16 * i, 0, 15, 32) for i in range(2)]
+        self.ghosts = [_img(32 + 16 * i, 0, 15, 32) for i in range(2)]
+        self.vampires = [_img(64 + 16 * i, 0, 15, 48) for i in range(2)]
+        self.tormented_souls = [_img(16 * i, 64, 16 + 15, 32) for i in range(2)]
+        self.demons = [_img(64 + 32 * i, 48, 16 + 15, 48) for i in range(2)]
+        self.maggots = [_img(0, 32 + i * 16, 16 + 15, 16) for i in range(2)]
+
+
+CHARACTER_SHEET = _CharacterSheet()
 
 
 _3D_TEXTURES = {}  # sheet_id -> TextureSheet
@@ -42,6 +71,7 @@ class ThreeDeeModels:
     FORKLIFT_STATIC = None
     FORKLIFT = None
     SQUARE = None
+    VERT_SQUARE = None
     CUBE = None
     SPHERE = None
     WEDGE = None
@@ -75,6 +105,12 @@ class ThreeDeeModels:
         ThreeDeeModels.SQUARE = TDM.load_from_disk("square", util.resource_path("assets/models/square.obj"))\
             .apply_scaling((4, 4, 4))\
             .apply_translation((-0.5, 0, -0.5))
+
+        # model is 1x1x0, origin is at bottom center
+        ThreeDeeModels.VERT_SQUARE = TDM.load_from_disk("square", util.resource_path("assets/models/square.obj")) \
+            .apply_scaling((4, 4, 4)) \
+            .apply_rotation((-math.pi / 2, 0, 0)) \
+            .apply_translation((-0.5, 1, 0))
 
         # model is 1x1x1, origin is at center of bottom face
         ThreeDeeModels.CUBE = TDM.load_from_disk("cube", util.resource_path("assets/models/cube.obj"))\
@@ -140,6 +176,7 @@ class TextureSheet(spritesheets.SpriteSheet):
 def initialize_sheets() -> typing.List[spritesheets.SpriteSheet]:
     all_sheets = []
     all_sheets.extend(ThreeDeeTextureSheets.ALL_SHEETS)
+    all_sheets.append(CHARACTER_SHEET)
 
     ThreeDeeModels.load_models_from_disk()
 

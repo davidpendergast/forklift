@@ -9,6 +9,7 @@ import src.engine.sprites as sprites
 import src.engine.threedee as threedee
 import src.engine.spritesheets as spritesheets
 import src.engine.renderengine as renderengine
+import src.engine.inputs as inputs
 
 import src.game.spriteref as spriteref
 
@@ -414,6 +415,17 @@ class Forklift(Entity):
                         fork_z=self.fork_z,
                         fork_z_bounds=self.fork_z_bounds,
                         uid=self.uid if keep_uid else None)
+
+
+class Character(Entity):
+
+    def __init__(self, xyz, model):
+        super().__init__(xyz, ((0, 0, 0),))
+        self.models = util.listify(model)
+        self.anim_rate_ms = 666
+
+    def is_liftable(self):
+        return True
 
 
 class LiftableEntityStack:
@@ -947,6 +959,50 @@ class World:
         else:
             return or_else
 
+    def max_entity_z_in_box(self, box, cond=None) -> typing.Tuple[int, Entity]:
+        ents = []
+        for ent in self.all_entities_in_box(box, cond=cond):
+            z_h = ent.get_bounding_box(axes='z')
+            ents.append((z_h[0] + z_h[1], ent.uid, ent))
+
+        if len(ents) == 0:
+            return None, None
+        else:
+            max_z = None
+            max_ent = None
+            ents.sort(reverse=True)
+            for idx, (top, _, ent) in enumerate(ents):
+                if max_z is not None and top <= max_z:
+                    break
+                for cell_xyz in ent.get_cells():
+                    if util.box_contains(box, cell_xyz):
+                        if max_z is None or cell_xyz[2] > max_z:
+                            max_z = cell_xyz[2]
+                            max_ent = ent
+            return max_z, max_ent
+
+    def min_entity_z_in_box(self, box, cond=None) -> typing.Tuple[int, Entity]:
+        ents = []
+        for ent in self.all_entities_in_box(box, cond=cond):
+            z_h = ent.get_bounding_box(axes='z')
+            ents.append((z_h[0], ent.uid, ent))
+
+        if len(ents) == 0:
+            return None, None
+        else:
+            min_z = None
+            min_ent = None
+            ents.sort()
+            for idx, (bot, _, ent) in enumerate(ents):
+                if min_z is not None and bot > min_z:
+                    break
+                for cell_xyz in ent.get_cells():
+                    if util.box_contains(box, cell_xyz):
+                        if min_z is None or cell_xyz[2] < min_z:
+                            min_z = cell_xyz[2]
+                            min_ent = ent
+            return min_z, min_ent
+
     def is_supported_from_below(self, ent: Entity, cond=None):
         for cell in ent.get_bottom_cells():
             if self.get_terrain_height(cell[:2], or_else=None) == cell[2]:
@@ -973,6 +1029,12 @@ def build_complex_world():
               [(0 + i, 4) for i in range(3)],
               [(4 + i, 4) for i in range(3)],
               [(0 + i, 0, 8) for i in range(3)]]
+    characters = [
+        ((6, 0, 0), spriteref.CHARACTER_SHEET.ghosts),
+        ((3, 4, 0), spriteref.CHARACTER_SHEET.demons),
+        ((1, 0, 9), spriteref.CHARACTER_SHEET.maggots)
+    ]
+
     for x in range(0, 8):
         for y in range(0, 5):
             if (x, y) not in holes:
@@ -990,6 +1052,8 @@ def build_complex_world():
     for plist in planks:
         w.add_entity(Block((0, 0, 0), [(p[0], p[1], (p[2] if len(p) >= 3 else 0)) for p in plist],
                            color=(160, 160, 128), liftable=True))
+    for ch in characters:
+        w.add_entity(Character(ch[0], ch[1]))
 
     return w
 
@@ -1071,6 +1135,8 @@ class WorldRenderer2D(WorldRenderer):
         super().__init__()
         self._terrain_sprites = {}  # (x, y) -> AbstractSprite
         self._entity_sprites = {}  # ent_id -> AbstractSprite
+        self._text_info = {}
+        self._text_info_spr = None
 
     def update(self, world_state: World):
         super().update(world_state)
@@ -1133,16 +1199,40 @@ class WorldRenderer2D(WorldRenderer):
         else:
             world_center = (0, 0)
 
+        screen_size = renderengine.get_instance().get_game_size()
+        offs = (-(screen_size[0] // 2 - world_center[0]), -(screen_size[1] // 2 - world_center[1]))
         for lay in renderengine.get_instance().get_layers(spriteref.world_2d_layer_ids()):
-            screen_size = renderengine.get_instance().get_game_size()
-            offs = (-(screen_size[0] // 2 - world_center[0]), -(screen_size[1] // 2 - world_center[1]))
             lay.set_offset(*offs)
+
+        self._text_info.clear()
+        self._text_info["xy"] = "outside window"
+        self._text_info["Tz"] = ""
+        self._text_info["Ez"] = ""
+
+        mouse_xy = inputs.get_instance().mouse_pos()
+        if mouse_xy is not None:
+            mouse_pos_in_world = util.add(mouse_xy, offs)
+            print(f"{mouse_pos_in_world=}")
+            mouse_grid_pos = util.xform_vec(util.mult(mouse_pos_in_world, 1 / cs), func=int)
+            self._text_info["xy"] = str(mouse_grid_pos)
+            self._text_info["Tz"] = str(world_state.get_terrain_height(mouse_grid_pos))
+            self._text_info["Ez"] = str(world_state.max_entity_z_in_box([*mouse_grid_pos, -100, 1, 1, 1000]))
+
+        text = "\n".join(f"{key}: {val}" for (key, val) in self._text_info.items())
+        if self._text_info_spr is None:
+            self._text_info_spr = sprites.TextSprite(
+                spriteref.LAYER_DEBUG, 0, 0, text,
+                scale=1,
+                color=(0, 0, 0),
+                font_lookup=spritesheets.get_default_font(mono=True))
+        self._text_info_spr = self._text_info_spr.update(new_text=text)
 
     def all_sprites(self):
         for spr in self._terrain_sprites.values():
             yield spr
         for spr in self._entity_sprites.values():
             yield spr
+        yield self._text_info_spr
 
 
 class WorldRenderer3D(WorldRenderer):
@@ -1153,12 +1243,12 @@ class WorldRenderer3D(WorldRenderer):
         self.camera = threedee.Camera3D(position=(-3.8, 3.2, 2.5), direction=(0.9, -0.4, 0), fov=45)
         self.skybox_sprite = None
 
-    def _get_or_make_spr3d(self, spr_id, layer=spriteref.LAYER_3D, idx=0):
+    def _get_or_make_spr3d(self, spr_id, layer=spriteref.LAYER_3D, idx=0, spr_type=threedee.Sprite3D):
         if spr_id in self._sprite_3ds:
             sprs = self._sprite_3ds[spr_id]
-            if idx < len(sprs):
+            if idx < len(sprs) and type(sprs[idx]) == spr_type:
                 return sprs[idx]
-        return threedee.Sprite3D(layer)
+        return spr_type(layer)
 
     def _all_sprites_for(self, e: Entity, spr_id):
         x, z, y = e.get_xyz()  # 3d coordinates, z and y are swapped intentionally
@@ -1175,6 +1265,19 @@ class WorldRenderer3D(WorldRenderer):
                                                new_rotation=(0, rot, 0)
                                                ).update_mesh("fork", new_pos=fork_pos)
             yield forklift_spr
+        elif isinstance(e, Character):
+            char_spr = self._get_or_make_spr3d(spr_id, spr_type=threedee.BillboardSprite3D)
+            cur_frame = util.index_into(e.models, globaltimer.get_elapsed_time() / e.anim_rate_ms, wrap=True)
+            char_scale = 0.333
+            w = cur_frame.width()
+            h = cur_frame.height()
+            char_spr = char_spr.update(new_model=spriteref.ThreeDeeModels.VERT_SQUARE,
+                                       new_texture=cur_frame,
+                                       new_scale=(char_scale * w / 16, char_scale * h / 16, 1),
+                                       new_position=(x + 0.5, y / 8 + 0.001, z + 0.5),
+                                       new_horz_billboard=True,
+                                       new_vert_billboard=False)
+            yield char_spr
         elif isinstance(e, Block):
             # TODO hacks here covering up some issue w/ direction indices & models' base directions
             bb = e.copy().rotate(-e.get_direction_idx() + 1).get_bounding_box()
