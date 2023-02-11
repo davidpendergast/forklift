@@ -419,10 +419,13 @@ class Forklift(Entity):
 
 class Character(Entity):
 
-    def __init__(self, xyz, model):
-        super().__init__(xyz, ((0, 0, 0),))
+    def __init__(self, xyz, model, uid=None):
+        super().__init__(xyz, ((0, 0, 0),), uid=uid)
         self.models = util.listify(model)
         self.anim_rate_ms = 666
+
+    def copy(self, keep_uid=True) -> 'Character':
+        return Character(self.xyz, self.models, uid=self.uid if keep_uid else None)
 
     def is_liftable(self):
         return True
