@@ -1,6 +1,8 @@
 import pygame
 
 import src.utils.util as util
+import src.utils.threadutils as threadutils
+
 import src.engine.sounds as sounds
 import src.engine.window as window
 import src.engine.inputs as inputs
@@ -220,7 +222,12 @@ class _GameLoop:
                 print("INFO: slow-mo mode ended after {} tick(s)".format(self._slo_mo_timer))
                 self._slo_mo_timer = 0
 
+            threadutils.update_popup_windows()
+
         self._game.cleanup()
+
+        threadutils.destroy_popup_windows()
+        threadutils.kill_all_worker_threads()
 
         print("INFO: quitting game")
         pygame.quit()
