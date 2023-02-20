@@ -222,11 +222,7 @@ class _GameLoop:
                 print("INFO: slow-mo mode ended after {} tick(s)".format(self._slo_mo_timer))
                 self._slo_mo_timer = 0
 
-            threadutils.update_popup_windows()
-
         self._game.cleanup()
-
-        threadutils.destroy_popup_windows()
         threadutils.kill_all_worker_threads()
 
         print("INFO: quitting game")

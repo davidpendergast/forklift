@@ -59,6 +59,12 @@ class ForkliftGame(game.Game):
 
         kb.set_binding(configs.DEBUG_TOGGLE_LIGHTING, keybinds.Binding(pygame.K_l, mods=(pygame.KMOD_NONE)))
 
+        # import src.utils.threadutils as threadutils
+        # kb.set_global_action(pygame.K_f, "open file dialog", lambda: threadutils.prompt_for_filename(title="Hello!", mustexist=True))
+        # kb.set_global_action(pygame.K_g, "open text dialog",
+        #                      lambda: threadutils.prompt_for_text("Text?", "Enter some text.", "Default Text"))
+        # kb.set_global_action(pygame.K_q, "kill tk", lambda: threadutils.end_tk_thread())
+
         globaltimer.set_show_fps(True)
 
         scenes.create_instance(menus.InGameScene(idx=0))

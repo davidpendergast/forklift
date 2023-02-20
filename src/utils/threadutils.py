@@ -1,4 +1,5 @@
 import multiprocessing.pool
+import threading
 import time
 import traceback
 import typing
@@ -95,36 +96,146 @@ def do_work_on_background_thread(runnable, args=(), name=None, future=None, log=
     return future
 
 
-def kill_all_worker_threads():
-    global _POOL
-    if _POOL is not None:
-        _POOL.close()
-        _POOL = None
+_TK_THREAD = None
 
+_TK_LOCK = threading.Lock()
+_TK_EXEC_QUEUE = []
+_TK_ACTIVE_FUTURES = set()
 
 _TK_ROOT = None
 
-def _get_or_create_tk_root_window(tk):
-    global _TK_ROOT
-    _TK_ROOT = tk.Tk()
-    _TK_ROOT.withdraw()
 
-    return _TK_ROOT
+def _start_tk_thread_if_necessary(tk):
+    global _TK_THREAD
+    if _TK_THREAD is None:
 
-def destroy_popup_windows():
-    global _TK_ROOT
-    if _TK_ROOT is not None:
-        _TK_ROOT.destroy()
-        _TK_ROOT = None
+        def tk_loop():
+            global _TK_ROOT, _TK_THREAD
+            _TK_ROOT = tk.Tk()
+            _TK_ROOT.withdraw()
 
-def update_popup_windows():
-    global _TK_ROOT
-    if _TK_ROOT is not None:
-        _TK_ROOT.update()
-        _TK_ROOT.update_idletasks()
+            def process_queue():
+                with _TK_LOCK:
+                    for item in _TK_EXEC_QUEUE:
+                        _TK_ROOT.after_idle(item)
+                    _TK_EXEC_QUEUE.clear()
+
+                    for f in list(_TK_ACTIVE_FUTURES):
+                        if f.is_done():
+                            _TK_ACTIVE_FUTURES.remove(f)
+
+                    if len(_TK_ACTIVE_FUTURES) == 0:
+                        print("INFO: no more jobs, destroying tk root")
+                        _TK_ROOT.after_idle(_TK_ROOT.destroy)
+                    else:
+                        _TK_ROOT.after(100, process_queue)
+
+            _TK_ROOT.after(100, process_queue)
+            _TK_ROOT.mainloop()
+
+            _TK_ROOT = None
+            _TK_THREAD = None
+
+        print("INFO: starting new tk thread")
+        _TK_THREAD = threading.Thread(target=tk_loop)
+        _TK_THREAD.start()
+
+def run_on_tk_thread(tk, func, futs=()):
+    with _TK_LOCK:
+        _TK_EXEC_QUEUE.append(func)
+        for f in futs:
+            _TK_ACTIVE_FUTURES.add(f)
+    _start_tk_thread_if_necessary(tk)
+
+def end_tk_thread():
+    with _TK_LOCK:
+        for f in _TK_ACTIVE_FUTURES:
+            f.set_val(None)
 
 
-def prompt_for_text(window_title, question_text, default_text, do_async=True) -> Future:
+def prompt_for_directory(
+        title=None,
+        mustexist=True,
+        initialdir=None) -> Future:
+    return _prompt_for_path(
+        title=title,
+        mustbefile=False,
+        mustexist=mustexist,
+        initialdir=initialdir
+    )
+
+def prompt_for_filename(
+        title=None,
+        mustexist=True,
+        defaultextension=None,
+        filetypes=None,
+        initialdir=None,
+        initialfile=None,
+        multiple=False) -> Future:
+    return _prompt_for_path(
+        title=title,
+        mustbefile=True,
+        mustexist=mustexist,
+        defaultextension=defaultextension,
+        filetypes=filetypes,
+        initialdir=initialdir,
+        initialfile=initialfile,
+        multiple=multiple if mustexist else None)
+
+def _prompt_for_path(
+        title=None,
+        mustbefile=True,
+        mustexist=True,
+        defaultextension=None,
+        filetypes=None,
+        initialdir=None,
+        initialfile=None,
+        multiple=None) -> Future:
+    try:
+        import tkinter as tk
+        import tkinter.filedialog
+    except ImportError as err:
+        traceback.print_exc()
+        print("ERROR: Couldn't import tkinter, returning None, hope this wasn't important...")
+        return Future().set_val(None, err=err)
+
+    fut = Future()
+
+    options = {
+        'title': title,
+        'mustexist': mustexist,
+        'defaultextension': defaultextension,
+        'filetypes': filetypes,
+        'initialdir': initialdir,
+        'initialfile': initialfile,
+        'multiple': multiple
+    }
+    for k, v in dict(options).items():
+        if v is None or (mustbefile and k == 'mustexist'):
+            del options[k]
+
+    def show_file_prompt():
+        try:
+            if mustbefile:
+                if mustexist:
+                    val = tkinter.filedialog.askopenfilename(**options)
+                else:
+                    val = tkinter.filedialog.asksaveasfilename(**options)
+            else:
+                val = tkinter.filedialog.askdirectory(**options)
+        except Exception as e:
+            print("ERROR: file prompt threw error, returning None")
+            fut.set_val(None, err=e)
+            traceback.print_exc()
+        else:
+            print(f"INFO: file prompt returned: {val}")
+            fut.set_val(val)
+
+    run_on_tk_thread(tk, show_file_prompt, futs=(fut,))
+    return fut
+
+
+def prompt_for_text(window_title, question_text, default_text) -> Future:
     try:
         import tkinter as tk
     except ImportError as err:
@@ -132,16 +243,14 @@ def prompt_for_text(window_title, question_text, default_text, do_async=True) ->
         print("ERROR: Couldn't import tkinter, returning None, hope this wasn't important...")
         return Future().set_val(None, err=err)
 
-    root = _get_or_create_tk_root_window(tk)
-
     fut = Future()
 
-    def build_window():
-        window = tk.Toplevel(root)
+    def show_text_prompt():
+        window = tk.Toplevel(_TK_ROOT)
         window.title(window_title)
 
         def on_close():
-            print("Popup window closed")
+            print("INFO: text prompt returned: None")
             window.destroy()
             fut.set_val(None)
 
@@ -156,15 +265,23 @@ def prompt_for_text(window_title, question_text, default_text, do_async=True) ->
         text_box.focus_set()
 
         def confirm():
-            fut.set_val(text_box.get('1.0', 'end-1c'))
+            val = text_box.get('1.0', 'end-1c')
+            print(f"INFO: text prompt returned: {val}")
+            fut.set_val(val)
             window.destroy()
 
         ok_btn = tk.Button(master=window, text="Ok", command=confirm)
         ok_btn.pack()
 
-    root.after_idle(build_window)
+    run_on_tk_thread(tk, show_text_prompt, futs=(fut,))
 
-    if do_async:
-        return do_work_on_background_thread(lambda: fut.wait(), name="TextPromptPopup", log=True)
-    else:
-        return fut.wait()
+    return fut
+
+def kill_all_worker_threads(include_tk=True):
+    global _POOL
+    if _POOL is not None:
+        _POOL.close()
+        _POOL = None
+
+    if include_tk:
+        end_tk_thread()
